@@ -309,25 +309,61 @@ async function resolverApiUrl(){
 }
 
 /**
+ * Aplica al DOM la letra/nombre de "Apariencia del panel admin" —
+ * separado de dónde vienen los datos (caché local o backend) para
+ * poder llamarlo dos veces: una con lo cacheado (instantáneo) y otra
+ * con lo real, cuando llegue.
+ */
+function aplicarMarcaAlDom(config){
+  const markEl = document.getElementById("loginMark");
+  const textoEl = document.getElementById("loginLabelTexto");
+
+  if(markEl && config.sidebarMark){
+    markEl.textContent = config.sidebarMark.toUpperCase();
+  }
+  if(textoEl && config.sidebarTexto){
+    textoEl.textContent = config.sidebarTexto.toUpperCase();
+  }
+}
+
+/**
  * Trae la letra/nombre configurados en Configuración → "Apariencia del
- * panel admin" (mismo endpoint que ya usa el sidebar del admin). Si
- * falla la conexión, la página sigue mostrando "J" / "JIREH" fijos del
+ * panel admin" (mismo endpoint que ya usa el sidebar del admin).
+ *
+ * En la app de escritorio, primero se aplica lo último guardado en
+ * SQLite (mismo caché que usa admin.js) — así el nombre real del
+ * negocio aparece de una, sin esperar a Apps Script, que es lo que
+ * antes hacía que este badge tardara varios segundos en mostrarse. La
+ * versión real se sigue pidiendo después, en segundo plano, y si
+ * cambió algo se actualiza sola y se vuelve a guardar en caché.
+ *
+ * En navegador (sin Electron) no hay SQLite disponible — se sigue
+ * pidiendo en vivo, como antes. Si falla la conexión en cualquiera de
+ * los dos casos, la página sigue mostrando "J" / "JIREH" fijos del
  * HTML, así que nunca se queda en blanco por esto.
  */
 async function aplicarMarcaDesdeBackend(){
+  const enElectron = window.posOffline && typeof window.posOffline.obtenerConfigNegocioCache === "function";
+
+  if(enElectron){
+    try{
+      const cacheado = await window.posOffline.obtenerConfigNegocioCache();
+      if(cacheado) aplicarMarcaAlDom(cacheado);
+    }catch(error){
+      console.error("No se pudo leer la marca cacheada:", error);
+    }
+  }
+
   try{
     const r = await fetch(API_URL + "?action=configuracionNegocio");
     const data = await r.json();
     if(!data.success || !data.config) return;
 
-    const markEl = document.getElementById("loginMark");
-    const textoEl = document.getElementById("loginLabelTexto");
+    aplicarMarcaAlDom(data.config);
 
-    if(markEl && data.config.sidebarMark){
-      markEl.textContent = data.config.sidebarMark.toUpperCase();
-    }
-    if(textoEl && data.config.sidebarTexto){
-      textoEl.textContent = data.config.sidebarTexto.toUpperCase();
+    if(enElectron){
+      try{ await window.posOffline.guardarConfigNegocioCache(data.config); }
+      catch(error){ console.error("No se pudo guardar la marca en caché:", error); }
     }
 
   }catch(error){
@@ -442,9 +478,19 @@ document.getElementById("loginForm").addEventListener("submit", async function(e
 
   try{
 
+    // Timeout explícito — sin esto, un Apps Script lento podía dejar
+    // este fetch colgado mucho más de lo razonable antes de si quiera
+    // intentar el login offline de respaldo (ver más abajo, en el
+    // catch). 12s es generoso para una red normal, pero corta a
+    // tiempo cuando el backend está con problemas.
+    const controlador = new AbortController();
+    const timeoutId = setTimeout(() => controlador.abort(), 12000);
+
     const r = await fetch(
-      `${API_URL}?action=login&usuario=${encodeURIComponent(usuario)}&password=${encodeURIComponent(password)}`
+      `${API_URL}?action=login&usuario=${encodeURIComponent(usuario)}&password=${encodeURIComponent(password)}`,
+      { signal: controlador.signal }
     );
+    clearTimeout(timeoutId);
 
     const data = await r.json();
 

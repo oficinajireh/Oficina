@@ -562,6 +562,7 @@
             <option value="sin_stock">Sin stock (0)</option>
             <option value="stock_negativo">Stock negativo</option>
             <option value="sin_imagen_y_stock">Sin imagen y sin stock</option>
+            <option value="ocultos">Ocultos (no publicados)</option>
           </select>
         </div>
       </div>
@@ -569,6 +570,9 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
           <span class="text-muted" style="font-size:12px;" id="etiquetasSeleccionInfo">Ningún producto seleccionado</span>
           <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-outline-success btn-sm" id="btnHacerVisibles" onclick="hacerVisiblesProductosSeleccionados()" disabled>
+              👁️ Hacer visibles
+            </button>
             <button class="btn btn-outline-dark btn-sm" id="btnGenerarQROffline" onclick="abrirModalQROffline()" disabled>
               📦 Generar QR de Identificación
             </button>
@@ -1335,7 +1339,14 @@
     <div class="card p-3 mb-3" id="repVentasPeriodo">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
         <h6 class="mb-0">📈 Ventas por período</h6>
+        <div class="d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" style="width:auto;" onchange="cambiarLimiteReporte('ventasPeriodo', this.value)">
+          <option value="10" selected>Últimos 10</option>
+          <option value="20">Últimos 20</option>
+          <option value="all">Todos</option>
+        </select>
         <button class="btn btn-outline-secondary btn-sm" onclick="exportarReportePDF('repVentasPeriodo','Ventas por periodo')">⬇️ Exportar PDF</button>
+      </div>
       </div>
       <div class="row g-2 mb-3" id="repVentasPeriodoResumen"></div>
       <div class="table-responsive">
@@ -1350,7 +1361,14 @@
     <div class="card p-3 mb-3" id="repProductos">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
         <h6 class="mb-0">🏆 Productos más vendidos</h6>
+        <div class="d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" style="width:auto;" onchange="cambiarLimiteReporte('productos', this.value)">
+          <option value="10" selected>Últimos 10</option>
+          <option value="20">Últimos 20</option>
+          <option value="all">Todos</option>
+        </select>
         <button class="btn btn-outline-secondary btn-sm" onclick="exportarReportePDF('repProductos','Productos mas vendidos')">⬇️ Exportar PDF</button>
+      </div>
       </div>
       <input type="text" id="repProductosBuscador" class="form-control form-control-sm mb-2"
              placeholder="🔍 Buscar producto por nombre o código..."
@@ -1367,7 +1385,14 @@
     <div class="card p-3 mb-3" id="repCategorias">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
         <h6 class="mb-0">🗂️ Ventas por categoría</h6>
+        <div class="d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" style="width:auto;" onchange="cambiarLimiteReporte('categorias', this.value)">
+          <option value="10" selected>Últimos 10</option>
+          <option value="20">Últimos 20</option>
+          <option value="all">Todos</option>
+        </select>
         <button class="btn btn-outline-secondary btn-sm" onclick="exportarReportePDF('repCategorias','Ventas por categoria')">⬇️ Exportar PDF</button>
+      </div>
       </div>
       <div class="table-responsive">
         <table class="table table-striped table-sm">
@@ -1381,7 +1406,14 @@
     <div class="card p-3 mb-3" id="repFormasPago">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
         <h6 class="mb-0">💳 Formas de pago</h6>
+        <div class="d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" style="width:auto;" onchange="cambiarLimiteReporte('formasPago', this.value)">
+          <option value="10" selected>Últimos 10</option>
+          <option value="20">Últimos 20</option>
+          <option value="all">Todos</option>
+        </select>
         <button class="btn btn-outline-secondary btn-sm" onclick="exportarReportePDF('repFormasPago','Formas de pago')">⬇️ Exportar PDF</button>
+      </div>
       </div>
       <div class="table-responsive">
         <table class="table table-striped table-sm">
@@ -1395,7 +1427,14 @@
     <div class="card p-3 mb-3" id="repCierres">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
         <h6 class="mb-0">🗒️ Historial de cierres de caja</h6>
+        <div class="d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" style="width:auto;" onchange="cambiarLimiteReporte('cierres', this.value)">
+          <option value="10" selected>Últimos 10</option>
+          <option value="20">Últimos 20</option>
+          <option value="all">Todos</option>
+        </select>
         <button class="btn btn-outline-secondary btn-sm" onclick="exportarReportePDF('repCierres','Cierres de caja')">⬇️ Exportar PDF</button>
+      </div>
       </div>
       <div class="table-responsive">
         <table class="table table-striped table-sm">
@@ -1409,7 +1448,14 @@
     <div class="card p-3 mb-3" id="repClientes">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
         <h6 class="mb-0">👥 Clientes que más compran</h6>
+        <div class="d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" style="width:auto;" onchange="cambiarLimiteReporte('clientes', this.value)">
+          <option value="10" selected>Últimos 10</option>
+          <option value="20">Últimos 20</option>
+          <option value="all">Todos</option>
+        </select>
         <button class="btn btn-outline-secondary btn-sm" onclick="exportarReportePDF('repClientes','Clientes')">⬇️ Exportar PDF</button>
+      </div>
       </div>
       <div class="table-responsive">
         <table class="table table-striped table-sm">
@@ -1515,14 +1561,14 @@
     <!-- KPIs -->
     <div class="row g-3 mb-3">
       <div class="col-6 col-md-3">
-        <div class="card p-3 metric-card" style="border-left-color:var(--red-500);">
+        <div class="card p-3 metric-card rc-kpi-clicable" style="border-left-color:var(--red-500);" onclick="_rcFiltrarDesdeKpi('sinstock')" title="Ver estos productos en la tabla">
           <div class="metric-icon bg-tint-red">🚫</div>
           <h6>Sin stock, con demanda</h6>
           <h2 id="rcKpiSinStock">0</h2>
         </div>
       </div>
       <div class="col-6 col-md-3">
-        <div class="card p-3 metric-card" style="border-left-color:#d97706;">
+        <div class="card p-3 metric-card rc-kpi-clicable" style="border-left-color:#d97706;" onclick="_rcFiltrarDesdeKpi('critico')" title="Ver estos productos en la tabla">
           <div class="metric-icon" style="background:#fef3e2;color:#b45309;">⏳</div>
           <h6>Cobertura &lt; 7 días</h6>
           <h2 id="rcKpiCritico">0</h2>
@@ -1544,26 +1590,103 @@
       </div>
     </div>
 
-    <!-- Top productos + Donut categorías -->
-    <div class="row g-3 mb-3">
-      <div class="col-12 col-lg-7">
-        <div class="card p-3" style="height:100%;">
-          <h6 class="mb-1">🏆 Top productos — vendidos vs. stock actual</h6>
-          <div class="text-muted mb-2" style="font-size:12px;">Barra celeste larga + barra gris corta = urgente reponer</div>
-          <canvas id="rcChartTop" height="260"></canvas>
+    <!-- Semáforo de reposición — lo primero: es la parte accionable del reporte -->
+    <div class="card p-3 mb-3">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <h6 class="mb-0">🚦 Qué reponer</h6>
+        <button class="btn btn-outline-secondary btn-sm" onclick="exportarReportePDF('rcSemaforoCard','Reporte de compras')">⬇️ Exportar PDF</button>
+      </div>
+      <div class="d-flex flex-wrap gap-2 align-items-end mb-2">
+        <div>
+          <label class="form-label" style="font-size:12px; margin-bottom:2px;">Buscar</label>
+          <input type="text" id="rcBuscarProducto" class="form-control form-control-sm" style="max-width:200px;"
+            placeholder="Código o nombre..." oninput="_rcAplicarFiltrosTabla()">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:12px; margin-bottom:2px;">Estado</label>
+          <select id="rcFiltroEstado" class="form-select form-select-sm" style="max-width:180px;" onchange="_rcAplicarFiltrosTabla()">
+            <option value="todos">Todos</option>
+            <option value="sinstock">🚫 Sin stock</option>
+            <option value="critico">🔴 Crítico</option>
+            <option value="atencion">🟡 Atención</option>
+            <option value="ok">🟢 OK</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:12px; margin-bottom:2px;">Mostrar</label>
+          <select id="rcFiltroCantidad" class="form-select form-select-sm" style="max-width:160px;" onchange="_rcAplicarFiltrosTabla()">
+            <option value="10">Top 10 más urgentes</option>
+            <option value="20">Top 20 más urgentes</option>
+            <option value="todos">Todos</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:12px; margin-bottom:2px;">Cubrir próximos</label>
+          <select id="rcDiasCobertura" class="form-select form-select-sm" style="max-width:150px;" onchange="_rcCambiarDiasCobertura()">
+            <option value="7">7 días</option>
+            <option value="15">15 días</option>
+            <option value="30" selected>30 días</option>
+          </select>
         </div>
       </div>
-      <div class="col-12 col-lg-5">
-        <div class="card p-3" style="height:100%;">
-          <h6 class="mb-1">🥯 Ventas por categoría</h6>
-          <div class="text-muted mb-2" style="font-size:12px;">Para priorizar el rubro donde invertir el presupuesto</div>
-          <canvas id="rcChartDonut" height="260"></canvas>
+      <div class="text-muted mb-2" style="font-size:12px;">Ordenado por urgencia — cobertura = cuántos días dura el stock al ritmo de venta actual. La venta diaria promedio sale del rango de fechas elegido arriba; "Cubrir próximos" define para cuántos días adelante calculamos el "Sugerido reponer". Tildá los productos para armar la lista de compra.</div>
+
+      <!-- Barra de lista de compra (aparece cuando hay algo tildado) -->
+      <div class="card p-2 mb-2" id="rcListaCompraBar" style="display:none; background:var(--slate-50); border-style:dashed;">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <span style="font-size:13px;" id="rcListaCompraInfo">0 productos seleccionados</span>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-outline-secondary btn-sm" onclick="_rcVaciarSeleccion()">Vaciar selección</button>
+            <button class="btn btn-primary btn-sm" onclick="_rcCopiarListaCompra()">📋 Copiar lista de compra</button>
+          </div>
         </div>
+      </div>
+
+      <div class="table-responsive" id="rcSemaforoCard">
+        <table class="table table-striped table-sm rc-tabla-semaforo">
+          <colgroup>
+            <col style="width:34px;">
+            <col style="width:110px;">
+            <col>
+            <col style="width:110px;">
+            <col style="width:80px;">
+            <col style="width:70px;">
+            <col style="width:90px;">
+            <col style="width:120px;">
+            <col style="width:100px;">
+          </colgroup>
+          <thead><tr>
+            <th><input type="checkbox" id="rcCheckTodos" onchange="_rcToggleTodos(this)"></th>
+            <th>Código</th><th>Producto</th><th>Categoría</th><th>Vendidos</th><th>Stock</th><th>Cobertura</th><th>Sugerido reponer</th><th>Estado</th>
+          </tr></thead>
+          <tbody id="rcSemaforoTabla"><tr><td colspan="9" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+        </table>
       </div>
     </div>
 
-    <!-- Tendencia por categoría -->
-    <div class="card p-3 mb-3">
+    <!-- Gráficos y tendencias — colapsado por defecto: es contexto, no lo que hay que decidir hoy -->
+    <details class="card p-3 mb-3" id="rcGraficosDetails">
+      <summary style="cursor:pointer; font-weight:600; list-style:none; display:flex; align-items:center; gap:6px;" onclick="setTimeout(_rcRedibujarSiEstaAbierto, 0)">
+        <span class="rc-summary-caret">▸</span> 📊 Ver gráficos y tendencias
+      </summary>
+
+      <div class="row g-3 mb-3 mt-1">
+        <div class="col-12 col-lg-7">
+          <div class="card p-3" style="height:100%;">
+            <h6 class="mb-1">🏆 Top productos — vendidos vs. stock actual</h6>
+            <div class="text-muted mb-2" style="font-size:12px;">Barra celeste larga + barra gris corta = urgente reponer</div>
+            <canvas id="rcChartTop" height="260"></canvas>
+          </div>
+        </div>
+        <div class="col-12 col-lg-5">
+          <div class="card p-3" style="height:100%;">
+            <h6 class="mb-1">🥯 Ventas por categoría</h6>
+            <div class="text-muted mb-2" style="font-size:12px;">Para priorizar el rubro donde invertir el presupuesto</div>
+            <canvas id="rcChartDonut" height="260"></canvas>
+          </div>
+        </div>
+      </div>
+
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
         <div>
           <h6 class="mb-1">📈 Tendencia de ventas por categoría</h6>
@@ -1577,41 +1700,7 @@
       </div>
       <canvas id="rcChartLinea" height="105"></canvas>
       <div id="rcTendenciaAviso" class="text-muted" style="font-size:12px; display:none; margin-top:8px;"></div>
-    </div>
-
-    <!-- Semáforo de reposición -->
-    <div class="card p-3 mb-3">
-      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-        <h6 class="mb-0">🚦 Semáforo de reposición</h6>
-        <button class="btn btn-outline-secondary btn-sm" onclick="exportarReportePDF('rcSemaforoCard','Reporte de compras')">⬇️ Exportar PDF</button>
-      </div>
-      <div class="d-flex flex-wrap gap-2 align-items-end mb-2">
-        <div>
-          <label class="form-label" style="font-size:12px; margin-bottom:2px;">Estado</label>
-          <select id="rcFiltroEstado" class="form-select form-select-sm" style="max-width:180px;" onchange="_rcAplicarFiltrosTabla()">
-            <option value="todos">Todos</option>
-            <option value="sinstock">Sin stock</option>
-            <option value="critico">Crítico</option>
-            <option value="atencion">Atención</option>
-            <option value="ok">OK</option>
-          </select>
-        </div>
-        <div>
-          <label class="form-label" style="font-size:12px; margin-bottom:2px;">Mostrar</label>
-          <select id="rcFiltroCantidad" class="form-select form-select-sm" style="max-width:160px;" onchange="_rcAplicarFiltrosTabla()">
-            <option value="10">Top 10 más urgentes</option>
-            <option value="todos">Todos</option>
-          </select>
-        </div>
-      </div>
-      <div class="text-muted mb-2" style="font-size:12px;">Ordenado por urgencia — cobertura = stock actual ÷ venta promedio diaria</div>
-      <div class="table-responsive" id="rcSemaforoCard">
-        <table class="table table-striped table-sm">
-          <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Vendidos</th><th>Stock</th><th>Cobertura</th><th>Estado</th></tr></thead>
-          <tbody id="rcSemaforoTabla"><tr><td colspan="7" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
-        </table>
-      </div>
-    </div>
+    </details>
   </div>
 
   <!-- ===== CONFIGURACION ===== -->
@@ -2283,6 +2372,7 @@
             <button class="btn btn-outline-danger btn-sm" id="btnQuitarMercadoPago" onclick="quitarConfigMercadoPago()" style="display:none;">Quitar configuración</button>
             <div class="d-flex gap-2">
               <button class="btn btn-outline-secondary btn-sm" onclick="probarCredencialesMercadoPagoBtn()">🧪 Probar conexión</button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="abrirModalQRDePrueba()" title="Abre el modal de cobro con un QR falso, sin llamar a Mercado Pago — sirve para probar botones/comportamiento del modal (ej. Cancelar) sin necesidad de tener MP configurado.">🧪 QR de prueba</button>
               <button class="btn btn-success btn-sm" id="btnGuardarMercadoPago" onclick="guardarConfigMercadoPagoForm()">💾 Guardar y configurar</button>
             </div>
           </div>
@@ -2695,6 +2785,19 @@
           </div>
         </div>
         <div class="pm-image-status" id="pmImagenStatus"></div>
+        <div class="mt-2">
+          <label class="form-label" style="font-size:12px;">Color de esta foto <span class="text-muted" style="font-size:11px;">(opcional — si el producto tiene un solo color, dejalo vacío)</span></label>
+          <input type="text" class="form-control form-control-sm" id="pmColorPrimario" placeholder="Ej: Rojo" style="max-width:220px;">
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <label class="form-label">
+          Otros colores / imágenes adicionales
+          <span class="text-muted" style="font-size:11px;">(opcional — en el catálogo aparecen como miniaturas debajo de la foto principal; al elegir una, el color queda como característica del pedido)</span>
+        </label>
+        <div id="pmGaleriaWrap"></div>
+        <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="agregarFilaGaleria()">+ Agregar color</button>
       </div>
 
       <div class="row g-2 mt-2">
@@ -3370,9 +3473,13 @@
     </div>
     <div class="product-modal-body" style="display:flex;flex-direction:column;gap:14px;">
 
-      <!-- Descuento -->
+      <!-- Descuento / Recargo -->
       <div>
-        <div class="mfv-label">🏷️ Descuento (opcional)</div>
+        <div class="mfv-label">🏷️ Descuento o recargo (opcional)</div>
+        <div class="discount-mode-row">
+          <button class="discount-mode-btn active" id="mfvModoDescuento" data-modo="DESCUENTO" onclick="mfvElegirModo(this,'DESCUENTO')">➖ Descuento</button>
+          <button class="discount-mode-btn"        id="mfvModoRecargo"  data-modo="RECARGO"   onclick="mfvElegirModo(this,'RECARGO')">➕ Recargo</button>
+        </div>
         <div style="display:flex;gap:6px;align-items:center;">
           <button class="discount-type-btn active" id="mfvTipoPct" data-tipo="PORCENTAJE" onclick="mfvElegirTipo(this,'PORCENTAJE')">%</button>
           <button class="discount-type-btn"        id="mfvTipoMonto" data-tipo="MONTO"      onclick="mfvElegirTipo(this,'MONTO')">$</button>
@@ -3380,7 +3487,7 @@
           <button class="discount-clear" onclick="mfvLimpiarDescuento()">✕</button>
         </div>
         <input type="text" id="mfvDescuentoMotivo" class="form-control form-control-sm mt-1" placeholder="Motivo (opcional)">
-        <div id="mfvDescuentoInfo" style="font-size:12px;color:var(--red-500);margin-top:4px;display:none;"></div>
+        <div id="mfvDescuentoInfo" style="font-size:12px;margin-top:4px;display:none;"></div>
       </div>
 
       <!-- Forma de pago -->
@@ -3390,6 +3497,19 @@
           <button class="pay-method-btn active" data-val="EFECTIVO"      onclick="mfvElegirPago(this,'EFECTIVO')">      <span class="ic">💵</span>Efectivo</button>
           <button class="pay-method-btn"        data-val="TRANSFERENCIA" onclick="mfvElegirPago(this,'TRANSFERENCIA')"><span class="ic">📲</span>Transfer.</button>
           <button class="pay-method-btn"        data-val="TARJETA"       onclick="mfvElegirPago(this,'TARJETA')">       <span class="ic">💳</span>Tarjeta</button>
+        </div>
+      </div>
+
+      <!-- Solo visible con Transferencia elegida y Mercado Pago configurado.
+           Sin esto, la venta quedaba obligada a generar el QR sí o sí, y si
+           esa generación fallaba (o el cliente ya había transferido directo
+           al alias, sin escanear nada), no había forma de simplemente
+           registrar la venta. -->
+      <div id="mfvQrWrap" style="display:none;">
+        <div class="mfv-label">📲 ¿Cómo se cobra la transferencia?</div>
+        <div class="discount-mode-row">
+          <button type="button" class="discount-mode-btn" id="mfvQrNo" data-modo="NO" onclick="mfvElegirGenerarQR(false)">✅ Ya me transfirió</button>
+          <button type="button" class="discount-mode-btn" id="mfvQrSi" data-modo="SI" onclick="mfvElegirGenerarQR(true)">🔲 Generar QR</button>
         </div>
       </div>
 

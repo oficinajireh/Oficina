@@ -978,6 +978,59 @@ select:focus-visible{
     will-change:transform;
 }
 
+/* ---- Miniaturas de imágenes / colores del Quick View ---- */
+
+.qv-thumbs{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:10px;
+}
+
+.qv-thumbs:empty{
+    display:none;
+}
+
+.qv-thumb{
+    width:56px;
+    height:56px;
+    padding:0;
+    border-radius:10px;
+    border:2px solid transparent;
+    background:#fff;
+    overflow:hidden;
+    cursor:pointer;
+    flex:0 0 auto;
+    transition:border-color .15s ease, transform .1s ease;
+}
+
+.qv-thumb img{
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    display:block;
+}
+
+.qv-thumb:hover{
+    transform:translateY(-2px);
+}
+
+.qv-thumb.active{
+    border-color:var(--brand, #6c3ce9);
+    box-shadow:0 0 0 1px var(--brand, #6c3ce9);
+}
+
+.qv-color-actual{
+    font-size:.85rem;
+    color:var(--ink-600);
+    margin-top:8px;
+}
+
+.qv-color-actual span{
+    font-weight:600;
+    color:var(--ink-900);
+}
+
 .qv-titulo{
     font-weight:700;
     color:var(--ink-900);
@@ -1165,6 +1218,14 @@ select:focus-visible{
 .cart-item-name{
     font-weight:700;
     font-size:.95rem;
+}
+
+.cart-item-color{
+    display:block;
+    font-weight:500;
+    font-size:.8rem;
+    color:var(--ink-600);
+    margin-top:2px;
 }
 
 .cart-item-subtotal{
@@ -1624,4 +1685,211 @@ body[data-tema="rojo"]{
   color: #c2410c;
   font-size: 13px;
   font-weight: 600;
+}
+
+/* ===== Movido desde <style> inline en index.html: animación popup promo ===== */
+  @keyframes fadeInPopup{ from{opacity:0;transform:scale(.95)} to{opacity:1;transform:scale(1)} }
+
+/* ===== Movido desde <style> inline en index.html: Loading Cat — Whisky ===== */
+  /*
+   * 🐱 Loading Cat — inspirado en Whisky, la gata cálico que
+   * desde 2015 apoya y sigue apoyando a su familia en todo momento.
+   * Los colores naranja, negro y blanco son los suyos,
+   * y la inspiración para este gato también viene de ella.
+   *
+   * Colores exactos de Whisky:
+   * — Blanco en el pecho, cara y patitas
+   * — Naranja dorado en los costados y mejillas
+   * — Gris oscuro/carbón en la espalda y cola
+   * — Ojos verdes, nariz rosada, bigotes largos blancos
+   *
+   * ── Dedicado con amor ──────────────────────────────────────
+   *
+   * A mis compañeros de vida felinos y caninos:
+   * Whisky, Ginebra, Susy, Tonic, Tigresa, Margarita, Milanesa,
+   * Queso, Copito, Hamburgueso, Mojito, Damita, Negro, Negrito, Oreo,
+   * Tequila, Tabaco y Ron (los hermanos de Whisky),
+   * Martini, Bella, Lucero, Wayna, Sombra, Gritoncio,
+   * Batman, Moto moto, Pantaleona,
+   * y todos los perritos y gatitos sin nombre que fueron
+   * mis amigos en estos años — gracias por el amor incondicional.
+   *
+   * A mis hijos Emanuel, Victor, Midori, Aaron, Kenshi,
+   * Naileth y Lynn — son mi razón y mi motor.
+   *
+   * A mi novia Keily, mi hermana Victoria,
+   * mi padre Edgar y mi mamá Magda —
+   * gracias por estar siempre.
+   *
+   * ────────────────────────────────────────────────────────────
+   */
+  .cat-loader{ position:relative; width:160px; height:160px; }
+
+  /* Arco del cuerpo — blanco (pecho), naranja (costado), gris oscuro (espalda) */
+  .cat-body{
+    position:absolute; inset:0;
+    border:20px solid transparent;
+    border-top-color:#3a3a3a;      /* espalda gris oscura */
+    border-right-color:#e8a84a;    /* costado naranja dorado */
+    border-bottom-color:#f5f5f5;   /* pecho blanco */
+    border-left-color:#e8a84a;     /* costado naranja */
+    border-radius:50%;
+    animation:cat-spin 1.4s linear infinite;
+    filter:drop-shadow(0 0 6px rgba(232,168,74,.25));
+  }
+
+  /* Cola — gris oscuro como la de Whisky, con base naranja */
+  .cat-tail{
+    position:absolute; bottom:0px; left:50%;
+    width:15px; height:42px;
+    background:linear-gradient(to bottom, #e8a84a 20%, #3a3a3a 100%);
+    border-radius:0 0 12px 12px;
+    transform-origin:top center;
+    animation:cat-spin 1.4s linear infinite, cat-tail 1.4s ease-in-out infinite;
+    margin-left:-7px;
+  }
+
+  /* Cara — blanca con mejilla naranja izquierda y mancha gris derecha */
+  .cat-face{
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    width:58px; height:52px;
+    background:#f5f5f5;            /* blanco base, como su cara */
+    border-radius:50% 50% 44% 44%;
+    z-index:2;
+    overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.15);
+  }
+
+  /* Mejilla naranja izquierda */
+  .cat-face::before{
+    content:"";
+    position:absolute; top:0; left:-2px;
+    width:26px; height:34px;
+    background:#e8a84a;
+    border-radius:0 70% 60% 0;
+    opacity:.85;
+  }
+
+  /* Mancha gris oscura arriba derecha — como su espalda */
+  .cat-face::after{
+    content:"";
+    position:absolute; top:-2px; right:2px;
+    width:20px; height:20px;
+    background:#4a4a4a;
+    border-radius:0 0 60% 60%;
+    opacity:.9;
+  }
+
+  /* Orejas */
+  .cat-ear{
+    position:absolute; top:-15px; width:0; height:0;
+    border-left:11px solid transparent;
+    border-right:11px solid transparent;
+  }
+  /* Oreja izquierda — naranja como su cabeza */
+  .cat-ear-l{
+    left:5px; transform:rotate(-8deg);
+    border-bottom:20px solid #e8a84a;
+  }
+  /* Oreja derecha — gris oscuro como su espalda */
+  .cat-ear-r{
+    right:5px; transform:rotate(8deg);
+    border-bottom:20px solid #4a4a4a;
+  }
+  /* Pelito interior de las orejas */
+  .cat-ear-l::after, .cat-ear-r::after{
+    content:"";
+    position:absolute; top:4px; left:-5px;
+    width:0; height:0;
+    border-left:5px solid transparent;
+    border-right:5px solid transparent;
+    border-bottom:10px solid rgba(255,255,255,.4);
+  }
+
+  /* Ojos — verdes como los de Whisky */
+  .cat-eye{
+    position:absolute; top:17px;
+    width:10px; height:10px;
+    background:#4a9e5c;
+    border-radius:50%;
+    z-index:4;
+    animation:cat-blink 3s ease-in-out infinite;
+    box-shadow:0 0 3px rgba(74,158,92,.5);
+  }
+  /* Pupila negra */
+  .cat-eye::after{
+    content:"";
+    position:absolute; top:2px; left:3px;
+    width:4px; height:6px;
+    background:#111;
+    border-radius:50%;
+  }
+  .cat-eye-l{ left:9px; }
+  .cat-eye-r{ right:9px; }
+
+  /* Nariz — rosada como la de Whisky */
+  .cat-nose{
+    position:absolute; bottom:12px; left:50%;
+    transform:translateX(-50%);
+    width:8px; height:5px;
+    background:#f4a7b9;
+    border-radius:50% 50% 40% 40%;
+    z-index:4;
+  }
+
+  /* Bigotes largos y blancos — como los de Whisky */
+  .cat-whiskers{
+    position:absolute; bottom:15px; left:50%;
+    transform:translateX(-50%);
+    width:54px; height:10px;
+    z-index:4;
+  }
+  .cat-whiskers::before{
+    content:"";
+    position:absolute; top:2px; left:0;
+    width:22px; height:1.5px;
+    background:rgba(255,255,255,.9);
+    border-radius:2px;
+    transform:rotate(-6deg);
+    box-shadow:0 4px 0 rgba(255,255,255,.7);
+  }
+  .cat-whiskers::after{
+    content:"";
+    position:absolute; top:2px; right:0;
+    width:22px; height:1.5px;
+    background:rgba(255,255,255,.9);
+    border-radius:2px;
+    transform:rotate(6deg);
+    box-shadow:0 4px 0 rgba(255,255,255,.7);
+  }
+
+  .loading-text{
+    position:absolute; bottom:-42px; left:50%;
+    transform:translateX(-50%);
+    color:#fff; font-size:14px; font-weight:600;
+    white-space:nowrap; font-family:sans-serif;
+    letter-spacing:.07em;
+    text-shadow:0 1px 4px rgba(0,0,0,.4);
+  }
+
+  @keyframes cat-spin{ to{ transform:rotate(360deg); } }
+  @keyframes cat-tail{
+    0%,100%{ transform:rotate(-22deg); }
+    50%{ transform:rotate(22deg); }
+  }
+  @keyframes cat-blink{
+    0%,88%,100%{ transform:scaleY(1); }
+    94%{ transform:scaleY(.08); }
+  }
+
+/* Reemplazo liviano de bootstrap-icons: antes se cargaba la fuente de
+   íconos completa (~1800 glyphs) para usar solo 11. Estos 11 se
+   inyectan como <symbol> SVG inline en el <body> y se referencian acá
+   con <svg class="bi-icon"><use href="#ic-nombre"></use></svg>. */
+.bi-icon{
+  display:inline-block;
+  width:1em; height:1em;
+  fill:currentColor;
+  vertical-align:-0.125em;
 }

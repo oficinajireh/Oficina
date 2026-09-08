@@ -121,6 +121,8 @@ let apariencaCargadaPromise = null;
 let nombreNegocio = "Catálogo";
 
 let qvProductoActual = null;
+let qvColorSeleccionado = null; // color de la imagen elegida en el Quick View (si tiene galería)
+let qvGaleriaActual = []; // galería de imágenes/colores del producto actualmente abierto en el Quick View
 let debounceTimer = null;
 let precioDebounceTimer = null;
 
@@ -644,6 +646,132 @@ function cambiarQtyInput(id, delta){
     el.value = Math.max(1, stockDisponible > 0 ? Math.min(stockDisponible, nuevo) : nuevo);
 }
 
+/**
+ * Arma la galería de imágenes de un producto a partir de las columnas
+ * de la hoja de Sheets:
+ *   - IMAGEN: imagen principal (obligatoria). Si existe COLOR, se toma
+ *     como el color de esa imagen principal.
+ *   - IMAGENES: columna opcional con imágenes adicionales, cada una
+ *     con su color, separadas por coma. Formato de cada entrada:
+ *         URL_IMAGEN|Nombre del color
+ *     El color es opcional (si se omite, esa miniatura no agrega
+ *     característica de color al pedido). Ejemplo de celda:
+ *         https://.../rojo.jpg|Rojo, https://.../azul.jpg|Azul
+ *
+ * Devuelve un array de { url, color }, sin URLs vacías ni duplicadas.
+ */
+function parsearGaleriaProducto(producto){
+
+    const galeria = [];
+    const vistos = new Set();
+
+    const agregar = (url, color) => {
+        url = String(url || "").trim();
+        if(!url || vistos.has(url)) return;
+        vistos.add(url);
+        galeria.push({ url, color: String(color || "").trim() });
+    };
+
+    agregar(producto.IMAGEN, producto.COLOR);
+
+    const extra = String(producto.IMAGENES || "").trim();
+    if(extra){
+        extra.split(",").forEach(entrada => {
+            const [url, color] = entrada.split("|");
+            agregar(url, color);
+        });
+    }
+
+    return galeria;
+}
+
+/**
+ * Dibuja la imagen grande + las miniaturas del Quick View. Si el
+ * producto tiene una sola imagen, oculta la fila de miniaturas.
+ * Al hacer clic en una miniatura, esa imagen pasa a mostrarse en
+ * grande y, si tiene un color asociado, ese color queda seleccionado
+ * para agregarse como característica del pedido.
+ */
+function renderGaleriaQuickView(producto){
+
+    const img = document.getElementById("qv-imagen");
+    const thumbsWrap = document.getElementById("qv-thumbs");
+    const colorWrap = document.getElementById("qv-color-actual");
+    const colorNombreEl = document.getElementById("qv-color-actual-nombre");
+
+    const galeria = parsearGaleriaProducto(producto);
+    qvGaleriaActual = galeria;
+
+    const seleccionarImagen = (index) => {
+
+        const item = galeria[index] || { url: producto.IMAGEN || "", color: "" };
+
+        img.src = item.url;
+        img.alt = producto.PRODUCTO || "";
+        img.onerror = function(){ this.onerror = null; this.src = PLACEHOLDER_IMG; };
+
+        qvColorSeleccionado = item.color || null;
+
+        if(qvColorSeleccionado){
+            colorNombreEl.textContent = qvColorSeleccionado;
+            colorWrap.classList.remove("d-none");
+        }else{
+            colorWrap.classList.add("d-none");
+        }
+
+        thumbsWrap.querySelectorAll(".qv-thumb").forEach((el, i) => {
+            el.classList.toggle("active", i === index);
+        });
+    };
+
+    if(galeria.length <= 1){
+        thumbsWrap.innerHTML = "";
+    }else{
+        thumbsWrap.innerHTML = galeria.map((item, i) => `
+            <button
+                type="button"
+                class="qv-thumb"
+                data-index="${i}"
+                aria-label="${item.color ? "Ver color " + escapeHtml(item.color) : "Ver imagen " + (i + 1)}"
+                title="${escapeHtml(item.color || "")}">
+                <img src="${item.url}" alt="${escapeHtml(item.color || producto.PRODUCTO || "")}" loading="lazy"
+                    onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'">
+            </button>
+        `).join("");
+    }
+
+    seleccionarImagen(0);
+}
+
+// Delegación de clics en las miniaturas del Quick View
+document.getElementById("qv-thumbs").addEventListener("click", function(e){
+
+    const btn = e.target.closest(".qv-thumb");
+    if(!btn) return;
+
+    const index = parseInt(btn.dataset.index, 10);
+    if(isNaN(index) || !qvGaleriaActual || !qvGaleriaActual[index]) return;
+
+    const item = qvGaleriaActual[index];
+    const img = document.getElementById("qv-imagen");
+    const colorWrap = document.getElementById("qv-color-actual");
+    const colorNombreEl = document.getElementById("qv-color-actual-nombre");
+
+    img.src = item.url;
+    qvColorSeleccionado = item.color || null;
+
+    if(qvColorSeleccionado){
+        colorNombreEl.textContent = qvColorSeleccionado;
+        colorWrap.classList.remove("d-none");
+    }else{
+        colorWrap.classList.add("d-none");
+    }
+
+    this.querySelectorAll(".qv-thumb").forEach((el, i) => {
+        el.classList.toggle("active", i === index);
+    });
+});
+
 function abrirQuickView(producto, actualizarUrl){
 
     if(!producto) return;
@@ -654,10 +782,7 @@ function abrirQuickView(producto, actualizarUrl){
 
     document.getElementById("qv-titulo").textContent = producto.PRODUCTO;
 
-    const img = document.getElementById("qv-imagen");
-    img.src = producto.IMAGEN || "";
-    img.alt = producto.PRODUCTO || "";
-    img.onerror = function(){ this.onerror = null; this.src = PLACEHOLDER_IMG; };
+    renderGaleriaQuickView(producto);
 
     document.getElementById("qv-categoria").textContent = producto.CATEGORIA || "";
     document.getElementById("qv-precio").textContent = "$" + formatearPrecio(producto.PRECIO);
@@ -954,6 +1079,8 @@ function restaurarURLBase(){
 // Al cerrar el Quick View (X, click afuera, Escape) se vuelve a la URL base
 document.getElementById("quickViewModal").addEventListener("hidden.bs.modal", function(){
     qvProductoActual = null;
+    qvColorSeleccionado = null;
+    qvGaleriaActual = [];
     restaurarURLBase();
 });
 
@@ -988,8 +1115,9 @@ function abrirProductoDesdeURL(){
 document.getElementById("qv-agregar").addEventListener("click", function(){
 
     const cantidad = parseInt(document.getElementById("qv-cantidad").value) || 1;
+    const imagenActual = document.getElementById("qv-imagen").src;
 
-    agregarAlCarrito(qvProductoActual, cantidad);
+    agregarAlCarrito(qvProductoActual, cantidad, qvColorSeleccionado, imagenActual);
 
     const modal = bootstrap.Modal.getInstance(document.getElementById("quickViewModal"));
     if(modal) modal.hide();
@@ -1035,11 +1163,12 @@ document.getElementById("qv-agregar").addEventListener("click", function(){
    CARRITO
 ========================================================= */
 
-function agregarAlCarrito(producto, cantidad){
+function agregarAlCarrito(producto, cantidad, color, imagenSeleccionada){
 
     if(!producto) return;
 
     cantidad = Math.max(1, cantidad || 1);
+    color = String(color || "").trim();
 
     const stockDisponible = Number(String(producto.STOCK ?? "").trim()) || 0;
 
@@ -1048,12 +1177,19 @@ function agregarAlCarrito(producto, cantidad){
         return;
     }
 
-    const existente = estado.carrito.find(p => String(p.CODIGO) === String(producto.CODIGO));
-    const yaEnCarrito = existente ? existente.cantidad : 0;
-    const totalSolicitado = yaEnCarrito + cantidad;
+    // Si el producto se agregó con un color distinto, es una línea de
+    // carrito aparte (mismo CODIGO, pero distinta característica) —
+    // así el color elegido queda claro en el pedido.
+    const existente = estado.carrito.find(p =>
+        String(p.CODIGO) === String(producto.CODIGO) && String(p.COLOR || "") === color
+    );
+    const yaEnCarritoDeEsteCodigo = estado.carrito
+        .filter(p => String(p.CODIGO) === String(producto.CODIGO))
+        .reduce((acc, p) => acc + p.cantidad, 0);
+    const totalSolicitado = yaEnCarritoDeEsteCodigo + cantidad;
 
     if(totalSolicitado > stockDisponible){
-        const podemos = stockDisponible - yaEnCarrito;
+        const podemos = stockDisponible - yaEnCarritoDeEsteCodigo;
         if(podemos <= 0){
             mostrarToast(`⚠️ Ya tenés el máximo disponible de "${producto.PRODUCTO}" en el carrito (${stockDisponible} ud${stockDisponible !== 1 ? "s" : ""})`, "error");
             return;
@@ -1066,13 +1202,20 @@ function agregarAlCarrito(producto, cantidad){
     if(existente){
         existente.cantidad += cantidad;
     }else{
-        estado.carrito.push({ ...producto, cantidad });
+        estado.carrito.push({
+            ...producto,
+            cantidad,
+            COLOR: color || undefined,
+            // Muestra en el carrito la imagen del color elegido (si se
+            // seleccionó una miniatura); si no, la imagen principal.
+            IMAGEN: imagenSeleccionada || producto.IMAGEN
+        });
     }
 
     guardarCarrito();
 
     if(stockDisponible <= 0 || totalSolicitado <= stockDisponible){
-        mostrarToast(`✓ ${producto.PRODUCTO} agregado (${cantidad})`, "success");
+        mostrarToast(`✓ ${producto.PRODUCTO}${color ? " (" + color + ")" : ""} agregado (${cantidad})`, "success");
     }
 }
 
@@ -1203,15 +1346,15 @@ function actualizarBarraMinimo(totalPrecio){
     });
 }
 
-function cambiarCantidad(codigo, cambio){
+function cambiarCantidad(codigo, cambio, color){
 
-    const item = estado.carrito.find(p => String(p.CODIGO) === String(codigo));
+    const item = estado.carrito.find(p => String(p.CODIGO) === String(codigo) && String(p.COLOR || "") === String(color || ""));
     if(!item) return;
 
     const nuevaCantidad = item.cantidad + cambio;
 
     if(nuevaCantidad <= 0){
-        estado.carrito = estado.carrito.filter(p => String(p.CODIGO) !== String(codigo));
+        estado.carrito = estado.carrito.filter(p => p !== item);
         guardarCarrito();
         abrirCarrito();
         return;
@@ -1230,9 +1373,9 @@ function cambiarCantidad(codigo, cambio){
     abrirCarrito();
 }
 
-function actualizarCantidadManual(codigo, cantidad){
+function actualizarCantidadManual(codigo, cantidad, color){
 
-    const item = estado.carrito.find(p => String(p.CODIGO) === String(codigo));
+    const item = estado.carrito.find(p => String(p.CODIGO) === String(codigo) && String(p.COLOR || "") === String(color || ""));
     if(!item) return;
 
     cantidad = parseInt(cantidad);
@@ -1254,9 +1397,11 @@ function actualizarCantidadManual(codigo, cantidad){
     abrirCarrito();
 }
 
-function eliminarProducto(codigo){
+function eliminarProducto(codigo, color){
 
-    estado.carrito = estado.carrito.filter(p => String(p.CODIGO) !== String(codigo));
+    estado.carrito = estado.carrito.filter(p =>
+        !(String(p.CODIGO) === String(codigo) && String(p.COLOR || "") === String(color || ""))
+    );
 
     guardarCarrito();
     abrirCarrito();
@@ -1313,9 +1458,24 @@ function sincronizarCarritoConStockActual(){
             return;
         }
 
-        // Actualiza el precio y el stock "de referencia" del ítem por si cambiaron
+        // Actualiza el precio y el stock "de referencia" del ítem por si cambiaron.
+        // Si el precio cambió, se avisa al cliente en vez de ajustarlo en silencio
+        // justo antes del checkout.
+        const precioAnterior = Number(item.PRECIO) || 0;
+        const precioCajaAnterior = Number(item.PRECIO_CAJA) || 0;
+
         item.PRECIO = actual.PRECIO;
         item.STOCK = stockActual;
+        if(item._esCaja) item.PRECIO_CAJA = actual.PRECIO_CAJA;
+
+        const precioCambio = Number(actual.PRECIO) !== precioAnterior ||
+            (item._esCaja && Number(actual.PRECIO_CAJA) !== precioCajaAnterior);
+
+        if(precioCambio){
+            huboAjustes = true;
+            const precioNuevo = item._esCaja ? item.PRECIO_CAJA : item.PRECIO;
+            avisos.push(`"${item.PRODUCTO}": el precio se actualizó a $${formatearPrecio(precioNuevo)}`);
+        }
 
         if(item.cantidad > stockActual){
             huboAjustes = true;
@@ -1362,7 +1522,7 @@ function abrirCarrito(){
             total += subtotal;
 
             html += `
-            <div class="cart-item-row" data-code="${escapeHtml(item.CODIGO)}">
+            <div class="cart-item-row" data-code="${escapeHtml(item.CODIGO)}" data-color="${escapeHtml(item.COLOR || "")}">
 
                 <div class="cart-item-main">
 
@@ -1377,7 +1537,10 @@ function abrirCarrito(){
 
                         <div class="d-flex justify-content-between align-items-center">
 
-                            <span class="cart-item-name">${escapeHtml(item.PRODUCTO)}</span>
+                            <span class="cart-item-name">
+                                ${escapeHtml(item.PRODUCTO)}
+                                ${item.COLOR ? `<span class="cart-item-color">Color: ${escapeHtml(item.COLOR)}</span>` : ""}
+                            </span>
 
                             <button type="button" class="btn btn-sm btn-danger" data-action="eliminar" aria-label="Quitar producto">
                                 🗑
@@ -1445,10 +1608,11 @@ document.getElementById("cart-items").addEventListener("click", function(e){
     if(!row) return;
 
     const codigo = row.dataset.code;
+    const color = row.dataset.color;
 
-    if(btn.dataset.action === "eliminar") eliminarProducto(codigo);
-    if(btn.dataset.action === "menos") cambiarCantidad(codigo, -1);
-    if(btn.dataset.action === "mas") cambiarCantidad(codigo, 1);
+    if(btn.dataset.action === "eliminar") eliminarProducto(codigo, color);
+    if(btn.dataset.action === "menos") cambiarCantidad(codigo, -1, color);
+    if(btn.dataset.action === "mas") cambiarCantidad(codigo, 1, color);
 });
 
 document.getElementById("cart-items").addEventListener("change", function(e){
@@ -1456,7 +1620,7 @@ document.getElementById("cart-items").addEventListener("change", function(e){
     if(e.target.dataset.actionInput === "cantidad"){
 
         const row = e.target.closest(".cart-item-row");
-        actualizarCantidadManual(row.dataset.code, e.target.value);
+        actualizarCantidadManual(row.dataset.code, e.target.value, row.dataset.color);
     }
 });
 
@@ -1642,7 +1806,7 @@ async function checkoutWhatsapp(){
 
             mensaje += `
 • ${item.PRODUCTO}
-Cantidad: ${item.cantidad}
+${item.COLOR ? `Color: ${item.COLOR}\n` : ""}Cantidad: ${item.cantidad}
 Subtotal: $${formatearPrecio(subtotal)}
 
 `;

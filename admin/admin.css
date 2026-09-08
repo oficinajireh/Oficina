@@ -1185,6 +1185,19 @@ tr.fila-arrastrable{ cursor:default; }
   display:flex; flex-direction:column; gap:5px;
 }
 
+.discount-mode-row{ display:flex; gap:5px; margin-bottom:6px; }
+.discount-mode-btn{
+  flex:1; padding:5px 6px; border-radius:6px;
+  border:1.5px solid var(--slate-200); background:#fff;
+  font-size:11px; font-weight:700; color:var(--slate-600);
+  cursor:pointer; transition:.15s; touch-action:manipulation;
+}
+.discount-mode-btn:hover{ border-color:var(--slate-300); }
+.discount-mode-btn.active[data-modo="DESCUENTO"]{ background:var(--red-500); border-color:var(--red-500); color:#fff; }
+.discount-mode-btn.active[data-modo="RECARGO"]{ background:var(--green-600); border-color:var(--green-600); color:#fff; }
+.discount-mode-btn.active[data-modo="NO"]{ background:var(--green-600); border-color:var(--green-600); color:#fff; }
+.discount-mode-btn.active[data-modo="SI"]{ background:var(--navy-900); border-color:var(--navy-900); color:#fff; }
+
 .discount-type-row{ display:flex; gap:5px; align-items:center; }
 .discount-type-btn{
   flex-shrink:0; width:28px; height:26px; border-radius:6px;
@@ -1955,6 +1968,25 @@ kbd{
 .pm-image-status.success{ color:var(--green-600); }
 .pm-image-status.error{ color:var(--red-500); }
 
+/* ---- Galería de colores/imágenes adicionales del producto ---- */
+
+.pm-galeria-row{
+  display:flex; align-items:flex-start; gap:10px;
+  padding:10px; margin-top:8px;
+  border:1px solid var(--slate-200); border-radius:var(--radius-sm);
+  background:var(--slate-50);
+}
+.pm-galeria-preview{
+  width:64px; height:64px; flex-shrink:0;
+  border-radius:8px; background:#fff;
+  border:1px solid var(--slate-200);
+  display:flex; align-items:center; justify-content:center;
+  font-size:24px; color:var(--slate-300);
+  overflow:hidden;
+}
+.pm-galeria-preview img{ width:100%; height:100%; object-fit:cover; display:block; }
+.pm-galeria-quitar{ flex-shrink:0; align-self:flex-start; }
+
 /* ===================== APARIENCIA — imagen del banner (recorte + preview) ===================== */
 
 /* Marco de recorte panorámico: mismo ratio que el hero de escritorio real
@@ -2044,7 +2076,71 @@ kbd{
   .mc-form-row .form-control{ min-width:0; width:100%; }
 }
 
-/* ===================== PEDIDOS — CARD LIST ===================== */
+/* ===================== REPORTE DE COMPRAS — TABLA "QUÉ REPONER" ===================== */
+/* En mobile la tabla se deforma (demasiadas columnas angostas), así que se
+   convierte en una lista de tarjetas: cada <tr> pasa a ser una tarjeta y cada
+   <td> muestra su etiqueta (data-label) al lado del valor. */
+@media (max-width:768px){
+  .rc-tabla-semaforo{ width:100%; }
+  .rc-tabla-semaforo colgroup{ display:none; }
+  .rc-tabla-semaforo thead{ display:none; }
+  .rc-tabla-semaforo tbody{ display:block; }
+
+  .rc-tabla-semaforo tr{
+    display:flex; flex-wrap:wrap; align-items:center;
+    gap:0 10px; position:relative;
+    background:#fff; border:1.5px solid var(--slate-200); border-radius:10px;
+    padding:10px 12px 8px; margin-bottom:10px;
+  }
+  /* Fila de "sin resultados / cargando" (colspan único): mantenerla simple */
+  .rc-tabla-semaforo tr:has(td[colspan]){ display:block; padding:14px; }
+
+  .rc-tabla-semaforo td{
+    border:none !important; padding:3px 0 !important; background:transparent !important;
+  }
+
+  /* Estado: arriba a la derecha, como badge de la tarjeta */
+  .rc-tabla-semaforo td:nth-child(9){ order:1; margin-left:auto; padding-bottom:6px !important; }
+
+  /* Checkbox: arriba a la izquierda */
+  .rc-tabla-semaforo td:nth-child(1){ order:2; padding-bottom:6px !important; }
+
+  /* Producto: título de la tarjeta, ocupa todo el ancho */
+  .rc-tabla-semaforo td:nth-child(3){
+    order:3; width:100%; font-weight:700; font-size:14px; color:var(--navy-900);
+    white-space:normal; overflow:visible; text-overflow:unset;
+  }
+
+  /* Código y categoría: subtítulo chico */
+  .rc-tabla-semaforo td:nth-child(2), .rc-tabla-semaforo td:nth-child(4){
+    width:auto; font-size:11px; color:var(--slate-500);
+  }
+  .rc-tabla-semaforo td:nth-child(2){ order:4; }
+  .rc-tabla-semaforo td:nth-child(2)::after{ content:"·"; margin:0 5px; color:var(--slate-300); }
+  .rc-tabla-semaforo td:nth-child(4){ order:5; }
+
+  /* Vendidos / Stock / Cobertura / Sugerido: grilla de datos 2x2 con etiqueta */
+  .rc-tabla-semaforo td:nth-child(5),
+  .rc-tabla-semaforo td:nth-child(6),
+  .rc-tabla-semaforo td:nth-child(7),
+  .rc-tabla-semaforo td:nth-child(8){
+    width:50%; margin-top:8px; padding-top:8px !important;
+    border-top:1px dashed var(--slate-100) !important;
+    font-size:13px;
+  }
+  .rc-tabla-semaforo td:nth-child(5){ order:6; }
+  .rc-tabla-semaforo td:nth-child(6){ order:7; }
+  .rc-tabla-semaforo td:nth-child(7){ order:8; }
+  .rc-tabla-semaforo td:nth-child(8){ order:9; }
+
+  .rc-tabla-semaforo td[data-label]::before{
+    content:attr(data-label); display:block;
+    font-size:10px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.02em; color:var(--slate-400); margin-bottom:1px;
+  }
+}
+
+
 
 .pedido-card{
   background:#fff;
@@ -2209,3 +2305,21 @@ kbd{
   padding:10px 18px;
 }
 .license-limited-banner .ic{ font-size:15px; }
+
+/* ---- Reporte de Compras: acordeón de gráficos + KPIs clicables ---- */
+#rcGraficosDetails summary{ outline:none; }
+#rcGraficosDetails summary::-webkit-details-marker{ display:none; }
+#rcGraficosDetails summary::marker{ content:""; }
+.rc-summary-caret{ display:inline-block; transition:transform .15s ease; }
+#rcGraficosDetails[open] .rc-summary-caret{ transform:rotate(90deg); }
+.rc-kpi-clicable{ cursor:pointer; transition:transform .1s ease, box-shadow .1s ease; }
+.rc-kpi-clicable:hover{ transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.08); }
+
+/* ---- Reporte de Compras: tabla del semáforo con anchos fijos, para que no
+   se corte horizontalmente por nombres de producto largos. El nombre se
+   trunca a una línea con "..." y se ve completo al pasar el mouse (title). ---- */
+.rc-tabla-semaforo{ table-layout:fixed; }
+.rc-tabla-semaforo td, .rc-tabla-semaforo th{
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.rc-tabla-semaforo td:nth-child(3){ white-space:normal; } /* Producto: permitir 2 líneas si hace falta, pero acotado por el ancho de la columna */

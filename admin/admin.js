@@ -219,6 +219,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   setupScannerListener();
+  suscribirseATransferenciasMP();
 });
 
 
@@ -228,6 +229,16 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text || "";
   return div.innerHTML;
+}
+
+/** Igual que escapeHtml, pero además neutraliza el apóstrofe (como entidad
+ *  HTML &#39;, que el navegador decodifica de nuevo a ' al leer el atributo).
+ *  Usar SIEMPRE que un valor se inserte dentro de un string JS delimitado
+ *  por comillas simples dentro de un onclick/onchange generado con innerHTML
+ *  — si no, un apóstrofe en el dato (código, nombre, motivo, etc.) corta el
+ *  string antes de tiempo y rompe el atributo con "missing ) after argument list". */
+function escapeJsAttr(text) {
+  return escapeHtml(text).replace(/'/g, "&#39;");
 }
 
 /**
@@ -1385,6 +1396,47 @@ function toast(mensaje, tipo) {
   }, 2600);
 }
 
+/**
+ * Toca un beep corto y agudo (dos tonos ascendentes) para acompañar el
+ * aviso de "transferencia recibida" — sin depender de ningún archivo de
+ * audio propio. Si el navegador bloqueó el audio por falta de interacción
+ * previa del usuario (autoplay policy), falla en silencio: el toast visual
+ * ya avisa igual.
+ */
+function sonarBeepTransferencia() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 1160].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.15, ctx.currentTime + i * 0.14);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.14 + 0.13);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.14);
+      osc.stop(ctx.currentTime + i * 0.14 + 0.14);
+    });
+  } catch (error) { /* sin audio disponible, no es crítico */ }
+}
+
+/**
+ * Solo tiene efecto dentro de la app de escritorio (Electron), que es la
+ * única que monitorea transferencias de Mercado Pago (ver main.js →
+ * gestionarMonitoreoTransferenciasMP). En la versión web esta función no
+ * hace nada porque window.veekpos no existe ahí.
+ */
+function suscribirseATransferenciasMP() {
+  if (!window.veekpos || !window.veekpos.onTransferenciaRecibida) return;
+
+  window.veekpos.onTransferenciaRecibida((t) => {
+    const monto = "$" + Number(t.monto).toLocaleString("es-AR");
+    const quien = t.pagador ? ` de ${t.pagador}` : "";
+    toast(`💸 Transferencia recibida: ${monto}${quien}`, "success");
+    sonarBeepTransferencia();
+  });
+}
+
 /* ===================== METRICAS ===================== */
 
 async function fetchConReintento(url, opciones, intentos) {
@@ -1853,15 +1905,12 @@ function mostrarSeccion(id) {
       }
       // Tarjeta licencia
       if (typeof mostrarEstadoLicenciaEnConfig === "function") mostrarEstadoLicenciaEnConfig();
-      // Tarjeta multicaja — OCULTA a propósito: el guardado de esta
-      // config (actualizarVisibilidadCampoNombreCaja / guardarConfigRed)
-      // nunca se terminó de implementar, y la función de red local en
-      // sí (el servidor HTTP que compartiría stock/ventas entre varias
-      // cajas) tampoco está construida del lado de Electron. Mostrar
-      // este formulario llevaba a un error real al tocarlo — mejor no
-      // ofrecer una función que en los hechos no hace nada.
-      // const tRed = document.getElementById("cardMultiCajaRed");
-      // if (tRed) tRed.style.display = "block";
+      // Tarjeta multicaja
+      const tRed = document.getElementById("cardMultiCajaRed");
+      if (tRed) {
+        tRed.style.display = "block";
+        cargarConfigRedForm();
+      }
       // Tarjeta MercadoPago
       const tMp = document.getElementById("cardMercadoPago");
       if (tMp) {
@@ -2341,21 +2390,28 @@ function cerrarModalDetallePedido() {
   document.getElementById("pedidoDetalleModalBackdrop").classList.remove("show");
   pedidoDetalleActual = null;
   _carritoEdicionPedido = null;
+  _descuentoEdicionPedido = null;
 }
 
 /* ===================== EDITAR ÍTEMS DE UN PEDIDO (solo estado NUEVO) ===================== */
 
 let _carritoEdicionPedido = null; // copia de trabajo mientras se edita — no toca pedidoDetalleActual hasta guardar
+let _descuentoEdicionPedido = null; // copia de trabajo del descuento — { monto, etiqueta }
 
 function activarEdicionItemsPedido() {
   if (!pedidoDetalleActual) return;
   // Copia de trabajo — si cancela, pedidoDetalleActual queda intacto
   _carritoEdicionPedido = pedidoDetalleActual.detalle.map(item => ({ ...item }));
+  _descuentoEdicionPedido = {
+    monto: Number(pedidoDetalleActual.pedido.DESCUENTO || 0),
+    etiqueta: pedidoDetalleActual.pedido.DESCUENTO_ETIQUETA || ""
+  };
   renderEdicionItemsPedido();
 }
 
 function cancelarEdicionItemsPedido() {
   _carritoEdicionPedido = null;
+  _descuentoEdicionPedido = null;
   abrirDetallePedido(pedidoDetalleActual.pedido.PEDIDO_ID); // vuelve a la vista normal, con los datos tal cual estaban
 }
 
@@ -2381,7 +2437,7 @@ function renderEdicionItemsPedido() {
     </tr>`).join("");
 
   const subtotal = _carritoEdicionPedido.reduce((acc, i) => acc + (Number(i.PRECIO) || 0) * (Number(i.cantidad) || 0), 0);
-  const descuento = Number(pedido.DESCUENTO || 0);
+  const descuento = Math.min(subtotal, Math.max(0, Number(_descuentoEdicionPedido.monto) || 0));
   const total = Math.max(0, subtotal - descuento);
 
   document.getElementById("pedidoDetalleBody").innerHTML = `
@@ -2412,13 +2468,26 @@ function renderEdicionItemsPedido() {
 
     <table style="width:100%; border-collapse:collapse; font-size:13.5px; margin-top:10px;">
       <tfoot>
-        ${descuento > 0 ? `
         <tr style="border-top:1px solid var(--slate-200);">
           <td colspan="4" style="padding-top:8px; color:var(--slate-500);">Subtotal</td>
           <td style="padding-top:8px; text-align:right; font-family:var(--font-mono); color:var(--slate-500);">${simbolo}${subtotal.toLocaleString("es-AR")}</td>
         </tr>
+      </tfoot>
+    </table>
+
+    <div class="d-flex gap-2 align-items-center mt-2">
+      <label style="font-size:12.5px; color:var(--red-500); font-weight:700; white-space:nowrap;">Descuento (${simbolo})</label>
+      <input type="number" min="0" step="1" value="${_descuentoEdicionPedido.monto || 0}" class="form-control form-control-sm" style="width:100px;"
+        onchange="_edicionPedidoCambiarDescuento('monto', this.value)">
+      <input type="text" placeholder="Motivo / etiqueta (opcional)" value="${escapeHtml(_descuentoEdicionPedido.etiqueta || "")}" class="form-control form-control-sm" style="flex:1;"
+        onchange="_edicionPedidoCambiarDescuento('etiqueta', this.value)">
+    </div>
+
+    <table style="width:100%; border-collapse:collapse; font-size:13.5px; margin-top:6px;">
+      <tfoot>
+        ${descuento > 0 ? `
         <tr>
-          <td colspan="4" style="padding-top:4px; color:var(--red-500); font-weight:700;">Descuento${pedido.DESCUENTO_ETIQUETA ? " (" + pedido.DESCUENTO_ETIQUETA + ")" : ""}</td>
+          <td colspan="4" style="padding-top:4px; color:var(--red-500); font-weight:700;">Descuento${_descuentoEdicionPedido.etiqueta ? " (" + escapeHtml(_descuentoEdicionPedido.etiqueta) + ")" : ""}</td>
           <td style="padding-top:4px; text-align:right; font-family:var(--font-mono); color:var(--red-500); font-weight:700;">-${simbolo}${descuento.toLocaleString("es-AR")}</td>
         </tr>` : ""}
         <tr style="border-top:2px solid var(--slate-200);">
@@ -2432,6 +2501,17 @@ function renderEdicionItemsPedido() {
       <button type="button" class="btn btn-outline-secondary btn-sm" onclick="cancelarEdicionItemsPedido()">Cancelar</button>
       <button type="button" class="btn btn-success btn-sm" id="btnGuardarEdicionItemsPedido" onclick="guardarEdicionItemsPedido()">💾 Guardar cambios</button>
     </div>`;
+}
+
+function _edicionPedidoCambiarDescuento(campo, valor) {
+  if (!_descuentoEdicionPedido) return;
+  if (campo === "monto") {
+    const n = Number(valor);
+    _descuentoEdicionPedido.monto = (isNaN(n) || n < 0) ? 0 : n;
+  } else if (campo === "etiqueta") {
+    _descuentoEdicionPedido.etiqueta = String(valor || "").trim();
+  }
+  renderEdicionItemsPedido();
 }
 
 function _edicionPedidoCambiarCampo(idx, campo, valor) {
@@ -2565,7 +2645,9 @@ async function guardarEdicionItemsPedido() {
       body: JSON.stringify({
         action: "editarItemsPedido",
         pedidoId,
-        carrito: _carritoEdicionPedido
+        carrito: _carritoEdicionPedido,
+        descuento: Number(_descuentoEdicionPedido && _descuentoEdicionPedido.monto) || 0,
+        descuentoEtiqueta: (_descuentoEdicionPedido && _descuentoEdicionPedido.etiqueta) || ""
       })
     }, { timeoutMs: 45000 });
     const data = await response.json();
@@ -2582,6 +2664,7 @@ async function guardarEdicionItemsPedido() {
     }
 
     _carritoEdicionPedido = null;
+    _descuentoEdicionPedido = null;
     invalidarCache("pedidos");
     cargarPedidos(); // refresca el total en la lista de atrás también
     abrirDetallePedido(pedidoId); // vuelve a la vista normal con los datos ya guardados
@@ -2599,6 +2682,7 @@ async function guardarEdicionItemsPedido() {
     toast("Se cortó la conexión esperando la respuesta — revisando si el cambio se guardó igual...", "error");
     try {
       _carritoEdicionPedido = null;
+      _descuentoEdicionPedido = null;
       invalidarCache("pedidos");
       await abrirDetallePedido(pedidoId);
     } catch (e2) {
@@ -3016,9 +3100,9 @@ function renderTablaProductos(lista) {
         <td>${stockBadge}</td>
         <td><span class="badge ${publicado ? "bg-success" : "bg-secondary"}">${publicado ? "Publicado" : "Oculto"}</span></td>
         <td class="celda-acciones-producto">
-          <button class="btn btn-outline-success btn-sm btn-accion-producto" onclick="abrirModalStock('${escapeHtml(p.CODIGO)}')" title="Sumar stock">📦 <span class="btn-accion-texto">Stock</span></button>
-          <button class="btn btn-primary btn-sm btn-accion-producto ms-2" onclick="editarProducto('${escapeHtml(p.CODIGO)}')" title="Editar">✏️ <span class="btn-accion-texto">Editar</span></button>
-          <button class="btn btn-danger btn-sm btn-accion-producto ms-2" onclick="eliminarProducto('${escapeHtml(p.CODIGO)}')" title="Eliminar">🗑️ <span class="btn-accion-texto">Eliminar</span></button>
+          <button class="btn btn-outline-success btn-sm btn-accion-producto" onclick="abrirModalStock('${escapeJsAttr(p.CODIGO)}')" title="Sumar stock">📦 <span class="btn-accion-texto">Stock</span></button>
+          <button class="btn btn-primary btn-sm btn-accion-producto ms-2" onclick="editarProducto('${escapeJsAttr(p.CODIGO)}')" title="Editar">✏️ <span class="btn-accion-texto">Editar</span></button>
+          <button class="btn btn-danger btn-sm btn-accion-producto ms-2" onclick="eliminarProducto('${escapeJsAttr(p.CODIGO)}')" title="Eliminar">🗑️ <span class="btn-accion-texto">Eliminar</span></button>
         </td>`;
       frag.appendChild(tr);
     }
@@ -3173,6 +3257,8 @@ function filtrarProductos() {
     filtrados = filtrados.filter(p => Number(p.STOCK ?? 0) < 0);
   } else if (estado === "sin_imagen_y_stock") {
     filtrados = filtrados.filter(p => !String(p.IMAGEN || "").trim() && Number(p.STOCK ?? 0) <= 0);
+  } else if (estado === "ocultos") {
+    filtrados = filtrados.filter(p => String(p.PUBLICADO || "").toUpperCase() !== "SI");
   }
 
   renderTablaProductos(filtrados);
@@ -3207,6 +3293,9 @@ function nuevoProducto() {
   document.getElementById("pmImagenPreview").innerHTML = "🖼️";
   document.getElementById("pmImagenStatus").textContent = "";
   document.getElementById("pmImagenStatus").className = "pm-image-status";
+  document.getElementById("pmColorPrimario").value = "";
+  document.getElementById("pmGaleriaWrap").innerHTML = "";
+  _pmGaleriaContador = 0;
   document.getElementById("pmPublicado").checked = true;
   document.getElementById("pmDestacado").checked = false;
   document.getElementById("pmOferta").checked = false;
@@ -3239,6 +3328,10 @@ function editarProducto(codigo) {
   document.getElementById("pmImagenArchivo").value = "";
   document.getElementById("pmImagenStatus").textContent = "";
   document.getElementById("pmImagenStatus").className = "pm-image-status";
+  document.getElementById("pmColorPrimario").value = p.COLOR || "";
+  document.getElementById("pmGaleriaWrap").innerHTML = "";
+  _pmGaleriaContador = 0;
+  parsearGaleriaAdminString(p.IMAGENES).forEach(f => agregarFilaGaleria(f.color, f.url));
   document.getElementById("pmPublicado").checked = String(p.PUBLICADO || "").toUpperCase() === "SI";
   document.getElementById("pmDestacado").checked = String(p.DESTACADO || "").toUpperCase() === "SI";
   document.getElementById("pmOferta").checked = String(p.OFERTA || "").toUpperCase() === "SI";
@@ -3368,6 +3461,117 @@ function actualizarPreviewImagenProducto() {
   preview.innerHTML = `<img src="${escapeHtml(url)}" alt="" onerror="this.parentElement.innerHTML='⚠️';">`;
 }
 
+/* ===================== GALERÍA DE COLORES / IMÁGENES ADICIONALES ===================== */
+/* Cada producto puede tener, además de la foto principal (pmImagen), otras
+   fotos asociadas a un color — se muestran como miniaturas en el Quick View
+   del catálogo web. Se guardan todas juntas en la columna IMAGENES de la
+   hoja PRODUCTOS, con el formato "url1|color1, url2|color2, ...". */
+
+let _pmGaleriaContador = 0;
+
+/** Arma un string "url|color, url|color, ..." a partir de una lista de {url, color} — inverso de parsearGaleriaAdminString() */
+function armarGaleriaAdminString(filas) {
+  return filas
+    .filter(f => f.url)
+    .map(f => f.url + (f.color ? "|" + f.color : ""))
+    .join(", ");
+}
+
+/** Parsea el string guardado en IMAGENES de vuelta a [{url, color}, ...] */
+function parsearGaleriaAdminString(texto) {
+  return String(texto || "")
+    .split(",")
+    .map(entrada => entrada.trim())
+    .filter(Boolean)
+    .map(entrada => {
+      const [url, color] = entrada.split("|");
+      return { url: (url || "").trim(), color: (color || "").trim() };
+    });
+}
+
+/** Agrega una fila vacía (o pre-cargada, en modo edición) a la galería de colores */
+function agregarFilaGaleria(color, url) {
+  const wrap = document.getElementById("pmGaleriaWrap");
+  if (!wrap) return;
+
+  const n = ++_pmGaleriaContador;
+
+  const fila = document.createElement("div");
+  fila.className = "pm-galeria-row";
+  fila.dataset.fila = n;
+  fila.innerHTML = `
+    <div class="pm-galeria-preview" id="pmGalPreview_${n}">🖼️</div>
+    <div style="flex:1; min-width:0;">
+      <div class="row g-2">
+        <div class="col-6">
+          <input type="text" class="form-control form-control-sm" id="pmGalColor_${n}" placeholder="Color (ej: Rojo)" value="${escapeHtml(color || "")}">
+        </div>
+        <div class="col-6">
+          <input type="file" class="form-control form-control-sm" accept="image/*" onchange="onSeleccionarArchivoImagenGaleria(event, ${n})">
+        </div>
+      </div>
+      <input type="text" class="form-control form-control-sm mt-1" id="pmGalUrl_${n}" placeholder="o pegá una URL de imagen" value="${escapeHtml(url || "")}" oninput="actualizarPreviewGaleria(${n})">
+      <div class="pm-image-status" id="pmGalStatus_${n}"></div>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-danger pm-galeria-quitar" onclick="quitarFilaGaleria(${n})" title="Quitar este color">✕</button>
+  `;
+
+  wrap.appendChild(fila);
+  actualizarPreviewGaleria(n);
+}
+
+function quitarFilaGaleria(n) {
+  const fila = document.querySelector(`.pm-galeria-row[data-fila="${n}"]`);
+  if (fila) fila.remove();
+}
+
+function actualizarPreviewGaleria(n) {
+  const url = (document.getElementById(`pmGalUrl_${n}`) || {}).value || "";
+  const preview = document.getElementById(`pmGalPreview_${n}`);
+  if (!preview) return;
+  const limpia = url.trim();
+  if (!limpia) { preview.innerHTML = "🖼️"; return; }
+  preview.innerHTML = `<img src="${escapeHtml(limpia)}" alt="" onerror="this.parentElement.innerHTML='⚠️';">`;
+}
+
+/** Handles the file picker de una fila de la galería: recorta y sube igual que la foto principal */
+function onSeleccionarArchivoImagenGaleria(event, n) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById(`pmGalStatus_${n}`);
+
+  if (!file.type.startsWith("image/")) {
+    if (statusEl) { statusEl.className = "pm-image-status error"; statusEl.textContent = "Elegí un archivo de imagen (jpg, png, webp)."; }
+    event.target.value = "";
+    return;
+  }
+
+  const TAMANO_ORIGINAL_MAXIMO_MB = 20;
+  if (file.size > TAMANO_ORIGINAL_MAXIMO_MB * 1024 * 1024) {
+    if (statusEl) { statusEl.className = "pm-image-status error"; statusEl.textContent = `⚠️ El archivo pesa demasiado (máx. ${TAMANO_ORIGINAL_MAXIMO_MB}MB). Elegí una foto más liviana.`; }
+    event.target.value = "";
+    return;
+  }
+
+  abrirRecorteImagenProducto(file, event.target, {
+    urlInputId: `pmGalUrl_${n}`,
+    previewId: `pmGalPreview_${n}`,
+    statusId: `pmGalStatus_${n}`
+  });
+}
+
+/** Junta las filas de la galería que están cargadas en el modal en el string que se manda al backend */
+function obtenerGaleriaDesdeFormulario() {
+  const filas = Array.from(document.querySelectorAll("#pmGaleriaWrap .pm-galeria-row")).map(fila => {
+    const n = fila.dataset.fila;
+    const url = (document.getElementById(`pmGalUrl_${n}`) || {}).value || "";
+    const color = (document.getElementById(`pmGalColor_${n}`) || {}).value || "";
+    return { url: url.trim(), color: color.trim() };
+  });
+  return armarGaleriaAdminString(filas);
+}
+
 /**
  * Redimensiona y comprime una imagen en el navegador antes de subirla,
  * para que una foto de celular de varios MB no tarde una eternidad en
@@ -3461,12 +3665,13 @@ async function onSeleccionarArchivoImagenProducto(event) {
 }
 
 /** Sube (comprime + manda a Drive) el blob YA recortado por el editor de recorte */
-async function subirImagenProductoRecortada(blob, inputEl) {
-  const statusEl = document.getElementById("pmImagenStatus");
+async function subirImagenProductoRecortada(blob, inputEl, destino) {
+  destino = destino || _DESTINO_IMAGEN_PRINCIPAL;
+  const statusEl = document.getElementById(destino.statusId);
 
   // Local preview inmediata, mientras se comprime y sube en segundo plano
   const localUrl = URL.createObjectURL(blob);
-  const preview = document.getElementById("pmImagenPreview");
+  const preview = document.getElementById(destino.previewId);
   if (preview) preview.innerHTML = `<img src="${localUrl}" alt="">`;
 
   if (statusEl) { statusEl.className = "pm-image-status uploading"; statusEl.textContent = "⏳ Optimizando imagen..."; }
@@ -3503,7 +3708,8 @@ async function subirImagenProductoRecortada(blob, inputEl) {
       return;
     }
 
-    document.getElementById("pmImagen").value = data.url;
+    const urlInput = document.getElementById(destino.urlInputId);
+    if (urlInput) urlInput.value = data.url;
     if (statusEl) { statusEl.className = "pm-image-status success"; statusEl.textContent = `✓ Imagen subida (${pesoFinalKB}KB)`; }
 
   } catch (error) {
@@ -3520,15 +3726,23 @@ async function subirImagenProductoRecortada(blob, inputEl) {
    imagen y ajusta el zoom dentro de un marco cuadrado fijo; al confirmar, se
    genera un canvas cuadrado recortado que después pasa por comprimirImagenProducto(). */
 
-let _cropState = null; // { file, imgEl, natW, natH, vp, scale, minScale, maxScale, tx, ty, inputEl, dragging, dragStartX, dragStartY, txStart, tyStart }
+let _cropState = null; // { file, imgEl, natW, natH, vp, scale, minScale, maxScale, tx, ty, inputEl, destino, dragging, dragStartX, dragStartY, txStart, tyStart }
 let _cropListenersListos = false;
 
-function abrirRecorteImagenProducto(file, inputEl) {
+// Destino por defecto del recorte: la foto principal del producto.
+// Las filas de la galería de colores pasan su propio destino (ver
+// agregarFilaGaleria / onSeleccionarArchivoImagenGaleria) para que el
+// mismo editor de recorte suba a su URL/preview/estado en vez de
+// pisar siempre la foto principal.
+const _DESTINO_IMAGEN_PRINCIPAL = { urlInputId: "pmImagen", previewId: "pmImagenPreview", statusId: "pmImagenStatus" };
+
+function abrirRecorteImagenProducto(file, inputEl, destino) {
+  destino = destino || _DESTINO_IMAGEN_PRINCIPAL;
   const backdrop = document.getElementById("cropImagenModalBackdrop");
   const imgEl = document.getElementById("cropImgEl");
   if (!backdrop || !imgEl) {
     // Fallback de seguridad: si el modal no está en el HTML, subimos sin recortar.
-    subirImagenProductoRecortada(file, inputEl);
+    subirImagenProductoRecortada(file, inputEl, destino);
     return;
   }
 
@@ -3551,7 +3765,7 @@ function abrirRecorteImagenProducto(file, inputEl) {
       scale: minScale, minScale, maxScale: minScale * 4,
       tx: (vp - natW * minScale) / 2,
       ty: (vp - natH * minScale) / 2,
-      inputEl,
+      inputEl, destino,
       dragging: false, dragStartX: 0, dragStartY: 0, txStart: 0, tyStart: 0
     };
 
@@ -3684,12 +3898,13 @@ function confirmarRecorteImagenProducto() {
   const backdrop = document.getElementById("cropImagenModalBackdrop");
   const urlOriginal = s.imgEl.src;
   const inputEl = s.inputEl;
+  const destino = s.destino;
 
   canvas.toBlob(blob => {
     if (backdrop) backdrop.classList.remove("show");
     URL.revokeObjectURL(urlOriginal);
     _cropState = null;
-    if (blob) subirImagenProductoRecortada(blob, inputEl);
+    if (blob) subirImagenProductoRecortada(blob, inputEl, destino);
   }, "image/jpeg", 0.92);
 }
 
@@ -4061,6 +4276,8 @@ async function guardarProductoForm() {
   const precio   = document.getElementById("pmPrecio").value;
   const stock    = document.getElementById("pmStock").value;
   const imagen   = document.getElementById("pmImagen").value.trim();
+  const colorPrimario = document.getElementById("pmColorPrimario").value.trim();
+  const imagenes = obtenerGaleriaDesdeFormulario();
   const publicado = document.getElementById("pmPublicado").checked ? "SI" : "NO";
   const destacado  = document.getElementById("pmDestacado").checked ? "SI" : "NO";
   const oferta     = document.getElementById("pmOferta").checked ? "SI" : "NO";
@@ -4094,6 +4311,8 @@ async function guardarProductoForm() {
       PRECIO: precio || 0,
       STOCK: stock || 0,
       IMAGEN: imagen,
+      COLOR: colorPrimario,
+      IMAGENES: imagenes,
       PUBLICADO: publicado,
       DESTACADO: destacado,
       OFERTA: oferta,
@@ -4282,11 +4501,11 @@ function renderTablaClientes(lista) {
     }
 
     const botones = c.CLIENTE_ID
-      ? `<button class="btn btn-outline-secondary btn-sm" onclick="abrirModalDetalleCliente('${escapeHtml(c.CLIENTE_ID)}')">Ver cuenta</button>
-         <button class="btn btn-warning btn-sm" onclick="abrirModalDeudaExtraDirecto('${escapeHtml(c.CLIENTE_ID)}', '${escapeHtml(c.NOMBRE || c.CLIENTE)}')">+ Deuda</button>
-         <button class="btn btn-primary btn-sm" onclick="abrirModalEditarCliente('${escapeHtml(c.CLIENTE_ID)}')">Editar</button>
-         <button class="btn btn-danger btn-sm" onclick="eliminarClienteForm('${escapeHtml(c.CLIENTE_ID)}', '${escapeHtml(c.NOMBRE)}')">Eliminar</button>`
-      : `<button class="btn btn-outline-success btn-sm" onclick="marcarClienteDesdeHistorialACredito('${escapeHtml(c.DNI)}')">Marcar a crédito</button>`;
+      ? `<button class="btn btn-outline-secondary btn-sm" onclick="abrirModalDetalleCliente('${escapeJsAttr(c.CLIENTE_ID)}')">Ver cuenta</button>
+         <button class="btn btn-warning btn-sm" onclick="abrirModalDeudaExtraDirecto('${escapeJsAttr(c.CLIENTE_ID)}', '${escapeJsAttr(c.NOMBRE || c.CLIENTE)}')">+ Deuda</button>
+         <button class="btn btn-primary btn-sm" onclick="abrirModalEditarCliente('${escapeJsAttr(c.CLIENTE_ID)}')">Editar</button>
+         <button class="btn btn-danger btn-sm" onclick="eliminarClienteForm('${escapeJsAttr(c.CLIENTE_ID)}', '${escapeJsAttr(c.NOMBRE)}')">Eliminar</button>`
+      : `<button class="btn btn-outline-success btn-sm" onclick="marcarClienteDesdeHistorialACredito('${escapeJsAttr(c.DNI)}')">Marcar a crédito</button>`;
 
       const cardHtml = `
     <div class="pedido-card ${bordeClase}">
@@ -4927,45 +5146,46 @@ function imprimirEtiquetaEnvio(datos) {
       border: 2px solid #000;
       border-radius: 4mm;
       page-break-inside: avoid;
+      color: #000;
     ">
 
       <!-- Franja frágil / cabecera -->
       <div style="background:#d32f2f; color:#fff; text-align:center; padding:6mm 4mm; border-radius:2mm; margin-bottom:6mm;">
-        <div style="font-size:26pt; font-weight:900; letter-spacing:2px; text-transform:uppercase;">POR FAVOR</div>
-        <div style="font-size:14pt; font-weight:700; letter-spacing:4px; text-transform:uppercase;">MANEJESE CON CUIDADO</div>
+        <div style="font-size:12pt; font-weight:900; letter-spacing:2px; text-transform:uppercase;">POR FAVOR</div>
+        <div style="font-size:12pt; font-weight:700; letter-spacing:4px; text-transform:uppercase;">MANEJESE CON CUIDADO</div>
         <div style="font-size:32pt; font-weight:900; letter-spacing:6px; margin:4px 0;">FRAGIL</div>
-        <div style="font-size:14pt; font-weight:700; letter-spacing:3px;">== GRACIAS ==</div>
+        <div style="font-size:12pt; font-weight:700; letter-spacing:3px;">== GRACIAS ==</div>
       </div>
 
       <!-- Datos del destinatario -->
       <table style="width:100%; border-collapse:collapse; font-size:13pt;">
         <tr>
-          <td style="font-size:12pt; font-weight:700; text-transform:uppercase; color:#555; width:28mm; vertical-align:top; padding-top:4px;">Nombre:</td>
-          <td style="font-size:32pt; font-weight:900; text-transform:uppercase; letter-spacing:1px;">${escapeHtml(cliente)}</td>
+          <td style="font-size:10pt; font-weight:700; text-transform:uppercase; color:#000; width:28mm; vertical-align:top; padding-top:4px;">Nombre:</td>
+          <td style="font-size:30pt; font-weight:900; text-transform:uppercase; letter-spacing:1px;">${escapeHtml(cliente)}</td>
         </tr>
         ${telefono ? `<tr>
-          <td style="font-size:12pt; font-weight:700; text-transform:uppercase; color:#555; padding-top:4px;">Teléfono:</td>
-          <td style="font-size:32pt; font-weight:700;">${escapeHtml(telefono)}</td>
+          <td style="font-size:10pt; font-weight:700; text-transform:uppercase; color:#000; padding-top:4px;">Teléfono:</td>
+          <td style="font-size:26pt; font-weight:700;">${escapeHtml(telefono)}</td>
         </tr>` : ""}
         ${direccion ? `<tr>
-          <td style="font-size:12pt; font-weight:700; text-transform:uppercase; color:#555; padding-top:4px;">Dirección:</td>
-          <td style="font-size:32pt; font-weight:700; text-transform:uppercase;">${escapeHtml(direccion)}</td>
+          <td style="font-size:10pt; font-weight:700; text-transform:uppercase; color:#000; padding-top:4px;">Dirección:</td>
+          <td style="font-size:26pt; font-weight:700; text-transform:uppercase;">${escapeHtml(direccion)}</td>
         </tr>` : ""}
         ${localidadStr ? `<tr>
-          <td style="font-size:12pt; font-weight:700; text-transform:uppercase; color:#555; padding-top:4px;">Localidad:</td>
-          <td style="font-size:32pt; font-weight:700; text-transform:uppercase;">${escapeHtml(localidadStr)}</td>
+          <td style="font-size:10pt; font-weight:700; text-transform:uppercase; color:#000; padding-top:4px;">Localidad:</td>
+          <td style="font-size:26pt; font-weight:700; text-transform:uppercase;">${escapeHtml(localidadStr)}</td>
         </tr>` : ""}
         ${provincia ? `<tr>
-          <td style="font-size:12pt; font-weight:700; text-transform:uppercase; color:#555; padding-top:4px;">Provincia:</td>
-          <td style="font-size:32pt; font-weight:700; text-transform:uppercase;">${escapeHtml(provincia)}</td>
+          <td style="font-size:10pt; font-weight:700; text-transform:uppercase; color:#000; padding-top:4px;">Provincia:</td>
+          <td style="font-size:26pt; font-weight:700; text-transform:uppercase;">${escapeHtml(provincia)}</td>
         </tr>` : ""}
         ${dni ? `<tr>
-          <td style="font-size:12pt; font-weight:700; text-transform:uppercase; color:#555; padding-top:4px;">DNI:</td>
-          <td style="font-size:32pt; font-weight:700;">${escapeHtml(dni)}</td>
+          <td style="font-size:10pt; font-weight:700; text-transform:uppercase; color:#000; padding-top:4px;">DNI:</td>
+          <td style="font-size:26pt; font-weight:700;">${escapeHtml(dni)}</td>
         </tr>` : ""}
         ${transporte ? `<tr>
-          <td style="font-size:12pt; font-weight:700; text-transform:uppercase; color:#555; padding-top:4px;">Transporte:</td>
-          <td style="font-size:32pt; font-weight:700; text-transform:uppercase;">${escapeHtml(transporte)}</td>
+          <td style="font-size:10pt; font-weight:700; text-transform:uppercase; color:#000; padding-top:4px;">Transporte:</td>
+          <td style="font-size:26pt; font-weight:700; text-transform:uppercase;">${escapeHtml(transporte)}</td>
         </tr>` : ""}
       </table>
 
@@ -5081,10 +5301,11 @@ let formaPagoPOS    = "EFECTIVO";
 let ultimoCodigoAgregadoPOS = null; // usado por el atajo +/- de cantidad
 let posTileFocusIdx  = -1;          // índice de la tarjeta con foco de teclado en el grid
 
-// Descuento aplicado al ticket actual
+// Descuento / recargo aplicado al ticket actual
 let descuentoTipoPOS   = "PORCENTAJE"; // "PORCENTAJE" | "MONTO"
 let descuentoValorPOS  = 0;            // valor ingresado (ej: 10 para 10%, o 500 para $500)
 let descuentoActivoPOS = false;
+let ajusteModoPOS      = "DESCUENTO";  // "DESCUENTO" | "RECARGO" — signo del ajuste aplicado
 
 /** Limpia el caché de productos del POS y recarga desde el backend */
 async function actualizarCatalogoPOSManual() {
@@ -5158,7 +5379,7 @@ function construirCategoriasPOS() {
   if (categorias.size === 0) { cont.innerHTML = ""; return; }
   let html = `<div class="cat-chip active" data-cat="TODAS" onclick="filtrarCategoriaPOS('TODAS', this)">Todas</div>`;
   categorias.forEach(c => {
-    html += `<div class="cat-chip" data-cat="${escapeHtml(c)}" onclick="filtrarCategoriaPOS('${escapeHtml(c)}', this)">${escapeHtml(c)}</div>`;
+    html += `<div class="cat-chip" data-cat="${escapeHtml(c)}" onclick="filtrarCategoriaPOS('${escapeJsAttr(c)}', this)">${escapeHtml(c)}</div>`;
   });
   cont.innerHTML = html;
 }
@@ -5213,6 +5434,12 @@ function palabraCoincideTolerantePOS(palabraBusqueda, palabraTexto) {
   if (!palabraBusqueda) return true;
   if (palabraTexto.includes(palabraBusqueda)) return true;
   if (palabraBusqueda.length < 3) return false; // muy corta -> el fuzzy da falsos positivos
+  // Un código de barras escaneado (solo dígitos, 6+ caracteres) no
+  // tiene "typos" que tolerar — si no matcheó literal arriba, no va a
+  // matchear con Levenshtein tampoco. Evita correr la comparación
+  // difusa contra cada palabra de cada producto del catálogo en cada
+  // tecla del escaneo (el costo que hacía sentir lento el escaneo).
+  if (/^\d{6,}$/.test(palabraBusqueda)) return false;
   const maxDist = palabraBusqueda.length <= 5 ? 1 : 2;
   return distanciaLevenshteinPOS(palabraBusqueda, palabraTexto, maxDist) <= maxDist;
 }
@@ -5230,14 +5457,25 @@ function productoCoincideBusquedaPOS(producto, filtroTexto) {
   const texto = normalizarBusquedaPOS(filtroTexto);
   if (!texto) return true;
 
-  const textoCompleto = normalizarBusquedaPOS(
-    [producto.CODIGO, producto.PRODUCTO, producto.CATEGORIA, producto.ALIAS].join(" ")
-  );
+  // El texto normalizado (y sus palabras) de cada producto no cambia
+  // entre tecla y tecla — se calcula una sola vez y se guarda en el
+  // propio producto. Con ~2000 productos, recalcular esto (lowercase +
+  // sacar tildes + unir 4 campos) en CADA letra tipeada era el costo
+  // real de la búsqueda por nombre; cacheado, cada tecla solo hace la
+  // comparación en sí.
+  let textoCompleto = producto._textoBusquedaPOS;
+  if (textoCompleto === undefined) {
+    textoCompleto = normalizarBusquedaPOS(
+      [producto.CODIGO, producto.PRODUCTO, producto.CATEGORIA, producto.ALIAS].join(" ")
+    );
+    producto._textoBusquedaPOS = textoCompleto;
+    producto._palabrasBusquedaPOS = textoCompleto.split(/\s+/).filter(Boolean);
+  }
 
   // Camino rápido: la frase completa tipeada aparece tal cual
   if (textoCompleto.includes(texto)) return true;
 
-  const palabrasTexto = textoCompleto.split(/\s+/).filter(Boolean);
+  const palabrasTexto = producto._palabrasBusquedaPOS;
   const palabrasBusqueda = texto.split(/\s+/).filter(Boolean);
 
   // Cada palabra tipeada tiene que encontrar alguna palabra del
@@ -5272,7 +5510,7 @@ function renderPosGrid(filtroTexto) {
   }
 
   let html = "";
-  const visibleList = lista.slice(0, 60);
+  const visibleList = lista.slice(0, 30);
 
   visibleList.forEach((p, idx) => {
     const stock     = p.STOCK !== undefined ? Number(p.STOCK) : null;
@@ -5307,7 +5545,7 @@ function renderPosGrid(filtroTexto) {
           <span class="tile-price">$${Number(p.PRECIO || 0).toLocaleString("es-AR")}</span>
           ${stockBadge}
         </div>
-        ${obtenerRolActual() === "vendedor" ? "" : `<button type="button" class="tile-edit" data-idx="${idx}" title="Editar precio y stock" onclick="event.stopPropagation(); abrirEdicionRapidaPOS('${escapeHtml(p.CODIGO)}');">✏️</button>`}
+        ${obtenerRolActual() === "vendedor" ? "" : `<button type="button" class="tile-edit" data-idx="${idx}" title="Editar precio y stock" onclick="event.stopPropagation(); abrirEdicionRapidaPOS('${escapeJsAttr(p.CODIGO)}');">✏️</button>`}
         ${Number(p.UNIDADES_POR_CAJA) > 0 ? `<button type="button" class="tile-caja" title="Agregar 1 caja (${p.UNIDADES_POR_CAJA} uds) a $${Number(p.PRECIO_CAJA || 0).toLocaleString("es-AR")}" onclick="event.stopPropagation(); agregarCajaAlTicket(productosPOS.find(x => String(x.CODIGO)==='${escapeHtml(p.CODIGO)}'));">📦x${p.UNIDADES_POR_CAJA}</button>` : ""}
         <span class="tile-add">+</span>
       </div>`;
@@ -5341,7 +5579,12 @@ function onPosInputKeyup(e) {
     if (valor !== "") {
       agregarProductoPorCodigo(valor);
       input.value = "";
-      renderPosGrid();
+      // Con debounce en vez de render inmediato: si se están
+      // escaneando varios productos seguidos (típico en el POS), esto
+      // evita reconstruir hasta 60 tarjetas de la grilla en CADA
+      // escaneo — solo se reconstruye una vez, 150ms después del
+      // último escaneo de la tanda.
+      renderPosGridConDemora("");
     }
     return;
   }
@@ -5499,6 +5742,10 @@ async function guardarEdicionRapidaPOS() {
     producto.PRECIO = Number(precio);
     producto.STOCK = Number(stock);
     producto.ALIAS = alias;
+    // El código o el alias pueden haber cambiado: invalidar el texto
+    // de búsqueda cacheado para que no quede buscando por el dato viejo.
+    producto._textoBusquedaPOS = undefined;
+    producto._palabrasBusquedaPOS = undefined;
     // Si el producto editado ya estaba en el ticket actual, el código
     // ahí también tiene que actualizarse — si no, quedaría apuntando
     // a un código que ya no existe más en productosPOS.
@@ -5681,10 +5928,19 @@ function renderTicketPOS() {
 
   const rowDescuentoEl = document.getElementById("rowDescuentoPOS");
   const descuentoMontoEl = document.getElementById("descuentoMontoPOS");
+  const descuentoLabelEl = rowDescuentoEl ? rowDescuentoEl.querySelector("span:first-child") : null;
   if (rowDescuentoEl && descuentoMontoEl) {
-    if (descuentoActivoPOS && montoDescuento > 0) {
+    if (descuentoActivoPOS && montoDescuento !== 0) {
       rowDescuentoEl.style.display = "flex";
-      descuentoMontoEl.innerText = "-$" + montoDescuento.toLocaleString("es-AR");
+      if (montoDescuento > 0) {
+        if (descuentoLabelEl) descuentoLabelEl.textContent = "Descuento";
+        descuentoMontoEl.style.color = "var(--red-500)";
+        descuentoMontoEl.innerText = "-$" + montoDescuento.toLocaleString("es-AR");
+      } else {
+        if (descuentoLabelEl) descuentoLabelEl.textContent = "Recargo";
+        descuentoMontoEl.style.color = "var(--green-600)";
+        descuentoMontoEl.innerText = "+$" + Math.abs(montoDescuento).toLocaleString("es-AR");
+      }
     } else {
       rowDescuentoEl.style.display = "none";
     }
@@ -5713,18 +5969,28 @@ function renderTicketPOS() {
 
 /* ---- discount ---- */
 
-/** Computes the discount amount (clamped to the subtotal) and the resulting total */
+/**
+ * Computes the discount/surcharge amount and the resulting total.
+ * `montoDescuento` is the signed amount SUBTRACTED from the subtotal to get
+ * the total: positive for a discount (total = subtotal - montoDescuento),
+ * negative for a surcharge/"recargo" (total = subtotal + |montoDescuento|).
+ */
 function calcularDescuentoPOS(subtotal) {
   if (!descuentoActivoPOS || descuentoValorPOS <= 0) {
     return { montoDescuento: 0, total: subtotal };
   }
 
-  let monto = descuentoTipoPOS === "PORCENTAJE"
+  let montoBruto = descuentoTipoPOS === "PORCENTAJE"
     ? subtotal * (descuentoValorPOS / 100)
     : descuentoValorPOS;
+  montoBruto = Math.max(0, montoBruto); // nunca negativo
 
-  monto = Math.max(0, Math.min(monto, subtotal)); // nunca negativo ni mayor al subtotal
+  if (ajusteModoPOS === "RECARGO") {
+    // El recargo se suma sobre el subtotal; no tiene tope superior.
+    return { montoDescuento: -montoBruto, total: subtotal + montoBruto };
+  }
 
+  const monto = Math.min(montoBruto, subtotal); // el descuento no puede superar el subtotal
   return { montoDescuento: monto, total: subtotal - monto };
 }
 
@@ -5805,25 +6071,28 @@ function quitarDescuentoPOS() {
 function resetearDescuentoPOS() {
   descuentoActivoPOS = false;
   descuentoValorPOS = 0;
+  ajusteModoPOS = "DESCUENTO";
   const input = document.getElementById("descuentoValorInput");
   if (input) input.value = "";
   const motivo = document.getElementById("descuentoMotivoInput");
   if (motivo) motivo.value = "";
 }
 
-/** Returns a short human-readable label for the active discount, e.g. "10% (-$500)" or "-$300" */
+/** Returns a short human-readable label for the active discount/recargo, e.g. "10% (-$500)" or "+$300" */
 function obtenerEtiquetaDescuentoPOS(subtotal) {
   if (!descuentoActivoPOS || descuentoValorPOS <= 0) return "";
   const { montoDescuento } = calcularDescuentoPOS(subtotal);
   const motivo = (document.getElementById("descuentoMotivoInput") || {}).value || "";
+  const signo = montoDescuento > 0 ? "-" : "+";
+  const montoAbs = Math.round(Math.abs(montoDescuento)).toLocaleString("es-AR");
   let etiqueta = descuentoTipoPOS === "PORCENTAJE"
-    ? `${descuentoValorPOS}% (-$${Math.round(montoDescuento).toLocaleString("es-AR")})`
-    : `-$${Math.round(montoDescuento).toLocaleString("es-AR")}`;
+    ? `${descuentoValorPOS}% (${signo}$${montoAbs})`
+    : `${signo}$${montoAbs}`;
   if (motivo.trim()) etiqueta += ` — ${motivo.trim()}`;
   return etiqueta;
 }
 
-/** Keeps the toggle button label/style in sync with the current discount state */
+/** Keeps the toggle button label/style in sync with the current discount/recargo state */
 function actualizarUIDescuentoPOS() {
   const btn = document.getElementById("btnToggleDescuento");
   const label = document.getElementById("discountToggleLabel");
@@ -5831,9 +6100,10 @@ function actualizarUIDescuentoPOS() {
 
   if (descuentoActivoPOS && descuentoValorPOS > 0) {
     btn.classList.add("has-discount");
+    const palabra = ajusteModoPOS === "RECARGO" ? "Recargo" : "Descuento";
     label.innerText = descuentoTipoPOS === "PORCENTAJE"
-      ? `Descuento aplicado: ${descuentoValorPOS}%`
-      : `Descuento aplicado: $${descuentoValorPOS.toLocaleString("es-AR")}`;
+      ? `${palabra} aplicado: ${descuentoValorPOS}%`
+      : `${palabra} aplicado: $${descuentoValorPOS.toLocaleString("es-AR")}`;
   } else {
     btn.classList.remove("has-discount");
     label.innerText = "Agregar descuento";
@@ -5852,7 +6122,13 @@ function elegirFormaPago(el, valor) {
 
 /* ---- Modal Finalizar Venta ---- */
 let mfvTipoDescuento = "PORCENTAJE";
+let mfvModoDescuento = "DESCUENTO"; // "DESCUENTO" | "RECARGO"
 let mfvFormaPago = "EFECTIVO";
+let mfvMpDisponible = false; // cacheado al abrir el modal — ¿hay MP configurado y usable?
+let mfvGenerarQR = false;    // elección del cajero cuando la forma de pago es TRANSFERENCIA:
+                              // true = generar QR para que el cliente escanee y pague ahí mismo;
+                              // false (default) = el cliente ya transfirió directo al alias/CVU,
+                              // registrar la venta sin pasar por Mercado Pago.
 
 function abrirModalFinalizarVenta() {
   if (ticketPOS.length === 0) { toast("El ticket está vacío", "error"); return; }
@@ -5873,6 +6149,12 @@ function abrirModalFinalizarVenta() {
   mfvTipoDescuento = descuentoTipoPOS || "PORCENTAJE";
   document.getElementById("mfvTipoPct").classList.toggle("active", mfvTipoDescuento === "PORCENTAJE");
   document.getElementById("mfvTipoMonto").classList.toggle("active", mfvTipoDescuento === "MONTO");
+
+  // Modo: descuento o recargo
+  mfvModoDescuento = ajusteModoPOS || "DESCUENTO";
+  document.getElementById("mfvModoDescuento").classList.toggle("active", mfvModoDescuento === "DESCUENTO");
+  document.getElementById("mfvModoRecargo").classList.toggle("active", mfvModoDescuento === "RECARGO");
+
   mfvActualizarDescuento();
 
   // Forma de pago
@@ -5881,6 +6163,15 @@ function abrirModalFinalizarVenta() {
     b.classList.toggle("active", b.dataset.val === mfvFormaPago);
   });
   mfvMostrarRecibido();
+
+  // QR de Mercado Pago para Transferencia — se resetea a "sin QR" cada vez
+  // que se abre el modal, y se consulta si MP está disponible en segundo
+  // plano (no bloquea la apertura del modal) para decidir si mostrar el
+  // selector o no.
+  mfvGenerarQR = false;
+  mfvMpDisponible = false;
+  mfvActualizarVisibilidadQR();
+  verificarMpDisponibleParaModal();
 
   // Recibido
   document.getElementById("mfvRecibido").value = "";
@@ -5912,7 +6203,43 @@ function mfvElegirPago(btn, valor) {
   document.querySelectorAll("#mfvPayMethods .pay-method-btn").forEach(b =>
     b.classList.toggle("active", b.dataset.val === valor));
   mfvMostrarRecibido();
+  mfvActualizarVisibilidadQR();
   if (valor === "EFECTIVO") setTimeout(() => document.getElementById("mfvRecibido").focus(), 50);
+}
+
+/** Consulta (una sola vez por apertura del modal) si Mercado Pago está configurado y usable, sin bloquear la apertura del modal */
+async function verificarMpDisponibleParaModal() {
+  const bridge = window.veekpos || window.posOffline;
+  if (!bridge || typeof bridge.mercadoPagoDisponible !== "function") {
+    mfvMpDisponible = false;
+  } else {
+    try {
+      mfvMpDisponible = await bridge.mercadoPagoDisponible();
+    } catch (error) {
+      mfvMpDisponible = false;
+    }
+  }
+  mfvActualizarVisibilidadQR();
+}
+
+/** Muestra/oculta el selector "Generar QR / Ya me transfirió" según la forma de pago elegida y si MP está disponible */
+function mfvActualizarVisibilidadQR() {
+  const wrap = document.getElementById("mfvQrWrap");
+  if (!wrap) return;
+
+  const mostrar = mfvFormaPago === "TRANSFERENCIA" && mfvMpDisponible;
+  wrap.style.display = mostrar ? "block" : "none";
+  if (!mostrar) mfvGenerarQR = false; // si se oculta (no hay MP, o cambiaron de forma de pago), nunca queda "generar QR" activo por error
+
+  const btnSi = document.getElementById("mfvQrSi");
+  const btnNo = document.getElementById("mfvQrNo");
+  if (btnSi) btnSi.classList.toggle("active", mfvGenerarQR);
+  if (btnNo) btnNo.classList.toggle("active", !mfvGenerarQR);
+}
+
+function mfvElegirGenerarQR(valor) {
+  mfvGenerarQR = valor;
+  mfvActualizarVisibilidadQR();
 }
 
 function mfvMostrarRecibido() {
@@ -5930,25 +6257,42 @@ function mfvElegirTipo(btn, tipo) {
   mfvActualizarDescuento();
 }
 
+function mfvElegirModo(btn, modo) {
+  mfvModoDescuento = modo;
+  btn.closest(".product-modal-body").querySelectorAll(".discount-mode-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.modo === modo));
+  mfvActualizarDescuento();
+}
+
 function mfvLimpiarDescuento() {
   document.getElementById("mfvDescuentoValor").value = "";
   document.getElementById("mfvDescuentoMotivo").value = "";
+  mfvModoDescuento = "DESCUENTO";
+  document.getElementById("mfvModoDescuento").classList.add("active");
+  document.getElementById("mfvModoRecargo").classList.remove("active");
   mfvActualizarDescuento();
 }
 
 function mfvActualizarDescuento() {
   const subtotal = ticketPOS.reduce((a, i) => a + i.PRECIO * i.cantidad, 0);
   const val = Number(document.getElementById("mfvDescuentoValor").value) || 0;
-  let monto = 0;
-  if (mfvTipoDescuento === "PORCENTAJE") monto = subtotal * val / 100;
-  else monto = val;
-  monto = Math.min(monto, subtotal);
-  const total = subtotal - monto;
+  let montoBruto = 0;
+  if (mfvTipoDescuento === "PORCENTAJE") montoBruto = subtotal * val / 100;
+  else montoBruto = val;
+  montoBruto = Math.max(0, montoBruto);
+
+  const esRecargo = mfvModoDescuento === "RECARGO";
+  const monto = esRecargo ? montoBruto : Math.min(montoBruto, subtotal);
+  const total = esRecargo ? subtotal + monto : subtotal - monto;
+
   document.getElementById("mfvTotal").textContent = "$" + total.toLocaleString("es-AR");
   const info = document.getElementById("mfvDescuentoInfo");
   if (monto > 0) {
     info.style.display = "block";
-    info.textContent = `Descuento: -$${monto.toLocaleString("es-AR")} → Total: $${total.toLocaleString("es-AR")}`;
+    info.style.color = esRecargo ? "var(--green-600)" : "var(--red-500)";
+    const signo = esRecargo ? "+" : "-";
+    const etiqueta = esRecargo ? "Recargo" : "Descuento";
+    info.textContent = `${etiqueta}: ${signo}$${monto.toLocaleString("es-AR")} → Total: $${total.toLocaleString("es-AR")}`;
   } else {
     info.style.display = "none";
   }
@@ -5980,6 +6324,7 @@ async function confirmarFinalizarVenta() {
   const motivoDescuento = document.getElementById("mfvDescuentoMotivo").value;
   if (valDescuento && Number(valDescuento) > 0) {
     descuentoTipoPOS = mfvTipoDescuento;
+    ajusteModoPOS = mfvModoDescuento;
     if (document.getElementById("descuentoValorInput"))
       document.getElementById("descuentoValorInput").value = valDescuento;
     if (document.getElementById("descuentoMotivoInput"))
@@ -5999,8 +6344,24 @@ async function confirmarFinalizarVenta() {
 
   cerrarModalFinalizarVenta();
 
-  // Si es TRANSFERENCIA y MercadoPago está configurado → mostrar QR antes de registrar
-  if (mfvFormaPago === "TRANSFERENCIA") {
+  // Subtotal/total (con descuento o recargo ya aplicado) — se calcula ACÁ,
+  // antes de decidir el camino de QR o el directo, porque ambos lo
+  // necesitan. Antes estaba declarado más abajo (en la sección
+  // "OPTIMISTIC"), y la rama de QR lo usaba desde arriba sin que existiera
+  // todavía — un ReferenceError garantizado ("Cannot access 'total' before
+  // initialization") cada vez que se intentaba generar el QR.
+  const subtotal = ticketPOS.reduce((acc, item) => acc + (item.PRECIO * item.cantidad), 0);
+  const { montoDescuento, total } = calcularDescuentoPOS(subtotal);
+  const etiquetaDescuento = obtenerEtiquetaDescuentoPOS(subtotal);
+
+  // Si es TRANSFERENCIA y el cajero eligió generar el QR (ver selector
+  // "¿Cómo se cobra la transferencia?" en el modal) → mostrar QR antes de
+  // registrar. Si no lo eligió (o MP no está disponible), la venta sigue
+  // de largo y se registra directo como transferencia manual — antes esto
+  // era obligatorio siempre que MP estuviera configurado, y si la
+  // generación del QR fallaba por cualquier motivo, la venta quedaba
+  // completamente bloqueada sin forma de simplemente registrarla.
+  if (mfvFormaPago === "TRANSFERENCIA" && mfvGenerarQR) {
     const bridge = window.veekpos || window.posOffline;
     if (bridge && typeof bridge.mercadoPagoDisponible === "function") {
       const mpDisponible = await bridge.mercadoPagoDisponible().catch(() => false);
@@ -6012,9 +6373,6 @@ async function confirmarFinalizarVenta() {
   }
 
   // ── OPTIMISTIC: calcular todo localmente y mostrar el recibo al instante ──
-  const subtotal = ticketPOS.reduce((acc, item) => acc + (item.PRECIO * item.cantidad), 0);
-  const { montoDescuento, total } = calcularDescuentoPOS(subtotal);
-  const etiquetaDescuento = obtenerEtiquetaDescuentoPOS(subtotal);
   const itemsSnapshot = [...ticketPOS];
   const fechaVenta = new Date();
   const ventaIdTemp = "VEN-" + Date.now().toString().slice(-6);
@@ -6070,7 +6428,7 @@ async function confirmarFinalizarVenta() {
           action: "guardarVenta",
           total: total,
           formaPago: formaPagoPOS,
-          observaciones: etiquetaDescuento ? "Descuento: " + etiquetaDescuento : "",
+          observaciones: etiquetaDescuento ? (ajusteModoPOS === "RECARGO" ? "Recargo: " : "Descuento: ") + etiquetaDescuento : "",
           carrito: itemsSnapshot,
           clienteVentaId: clienteVentaId
         })
@@ -6101,7 +6459,7 @@ async function confirmarFinalizarVenta() {
     // perdido la respuesta.
     encolarVentaPendiente({
       clienteVentaId, total, formaPago: formaPagoPOS,
-      observaciones: etiquetaDescuento ? "Descuento: " + etiquetaDescuento : "",
+      observaciones: etiquetaDescuento ? (ajusteModoPOS === "RECARGO" ? "Recargo: " : "Descuento: ") + etiquetaDescuento : "",
       carrito: itemsSnapshot
     });
     toast("📴 Sin conexión — la venta se guardó localmente y se subirá sola al reconectar", "error");
@@ -6371,15 +6729,19 @@ function mostrarRecibo(ventaId, items, total, subtotal, montoDescuento, recibido
       </tr>`;
   });
 
-  if (montoDescuento > 0) {
+  if (montoDescuento !== 0) {
+    const esRecargo = montoDescuento < 0;
+    const color = esRecargo ? "var(--green-600)" : "var(--red-500)";
+    const etiqueta = esRecargo ? "Recargo" : "Descuento";
+    const signo = esRecargo ? "+" : "-";
     html += `
       <tr>
         <td>Subtotal</td>
         <td style="text-align:right;">$${Number(subtotal).toLocaleString("es-AR")}</td>
       </tr>
       <tr>
-        <td style="color:var(--red-500);">Descuento</td>
-        <td style="text-align:right;color:var(--red-500);">-$${Math.round(montoDescuento).toLocaleString("es-AR")}</td>
+        <td style="color:${color};">${etiqueta}</td>
+        <td style="text-align:right;color:${color};">${signo}$${Math.round(Math.abs(montoDescuento)).toLocaleString("es-AR")}</td>
       </tr>`;
   }
 
@@ -6452,18 +6814,21 @@ function buildThermalHTML(ventaId, items, total, formaPago, fecha, descuento, cf
       </tr>`;
   });
 
-  const tieneDescuento = descuento && Number(descuento.monto) > 0;
+  const tieneDescuento = descuento && Number(descuento.monto) !== 0;
+  const esRecargoPrint = tieneDescuento && Number(descuento.monto) < 0;
 
   let filasTotales = "";
   if (tieneDescuento) {
+    const etiquetaFila = esRecargoPrint ? "Recargo" : "Descuento";
+    const signoFila = esRecargoPrint ? "+" : "-";
     filasTotales += `
       <tr>
         <td>Subtotal</td>
         <td style="text-align:right;">$${subtotal.toLocaleString("es-AR")}</td>
       </tr>
       <tr>
-        <td>Descuento${descuento.etiqueta ? " (" + escapeHtml(descuento.etiqueta) + ")" : ""}</td>
-        <td style="text-align:right;">-$${Math.round(descuento.monto).toLocaleString("es-AR")}</td>
+        <td>${etiquetaFila}${descuento.etiqueta ? " (" + escapeHtml(descuento.etiqueta) + ")" : ""}</td>
+        <td style="text-align:right;">${signoFila}$${Math.round(Math.abs(descuento.monto)).toLocaleString("es-AR")}</td>
       </tr>`;
   }
   filasTotales += `
@@ -6621,12 +6986,15 @@ function buildThermalESCPOS(ventaId, items, total, formaPago, fecha, descuento, 
     b.row(`${item.cantidad} x $${money(item.PRECIO)}`, "$" + money(sub));
   });
 
-  const tieneDescuento = descuento && Number(descuento.monto) > 0;
+  const tieneDescuento = descuento && Number(descuento.monto) !== 0;
   if (tieneDescuento) {
+    const esRecargoESC = Number(descuento.monto) < 0;
     b.sep();
     b.row("Subtotal", "$" + money(subtotal));
-    const etiquetaDesc = descuento.etiqueta ? `Descuento (${descuento.etiqueta})` : "Descuento";
-    b.row(etiquetaDesc, "-$" + money(descuento.monto));
+    const palabraAjuste = esRecargoESC ? "Recargo" : "Descuento";
+    const etiquetaDesc = descuento.etiqueta ? `${palabraAjuste} (${descuento.etiqueta})` : palabraAjuste;
+    const signoESC = esRecargoESC ? "+" : "-";
+    b.row(etiquetaDesc, signoESC + "$" + money(Math.abs(descuento.monto)));
   }
 
   b.sepSolid();
@@ -6943,7 +7311,7 @@ function imprimirTicketThermal() {
   const { montoDescuento, total } = calcularDescuentoPOS(subtotal);
   const etiqueta = obtenerEtiquetaDescuentoPOS(subtotal);
   _ejecutarImpresion("PREVIO", ticketPOS, total, formaPagoPOS, new Date(),
-    montoDescuento > 0 ? { monto: montoDescuento, etiqueta } : null);
+    montoDescuento !== 0 ? { monto: montoDescuento, etiqueta } : null);
 }
 
 /** Print after a completed sale (from receipt modal) */
@@ -6951,7 +7319,7 @@ function imprimirUltimoRecibo() {
   if (!ultimaVentaImprimible) { toast("No hay venta para imprimir", "error"); return; }
   const u = ultimaVentaImprimible;
   _ejecutarImpresion(u.ventaId, u.items, u.total, u.formaPago, u.fecha,
-    u.descuento > 0 ? { monto: u.descuento, etiqueta: u.descuentoEtiqueta } : null);
+    u.descuento !== 0 ? { monto: u.descuento, etiqueta: u.descuentoEtiqueta } : null);
 }
 
 /** Print a sale from the dashboard recent-sales table or the Ventas POS history */
@@ -7912,6 +8280,28 @@ function _getCacheReporte(key, ttlMs = 90000) {
   return (c && Date.now() - c.ts < ttlMs) ? c.data : null;
 }
 
+/* ---- Selector "10 últimos / 20 últimos / todos" para cada uno de los 6 reportes ---- */
+const _repLimites = { ventasPeriodo: 10, productos: 10, categorias: 10, formasPago: 10, cierres: 10, clientes: 10 };
+const _repDatosActuales = { ventasPeriodo: [], categorias: [], formasPago: [], cierres: [], clientes: [] };
+
+function _limitarReporte(lista, key) {
+  const lim = _repLimites[key];
+  return (lim === "all") ? lista : lista.slice(0, Number(lim));
+}
+
+/** Llamado por el <select> de cada reporte cuando el usuario elige 10 / 20 / todos. */
+function cambiarLimiteReporte(key, valor) {
+  _repLimites[key] = valor;
+  switch (key) {
+    case "ventasPeriodo": renderReporteVentasPeriodo(); break;
+    case "productos": renderReporteProductos(_repProductosDatosActuales, (document.getElementById("repProductosBuscador") || {}).value || ""); break;
+    case "categorias": renderReporteCategorias(); break;
+    case "formasPago": renderReporteFormasPago(); break;
+    case "cierres": renderReporteCierres(); break;
+    case "clientes": renderReporteClientes(); break;
+  }
+}
+
 /* ---- Reporte 1: Ventas por período ---- */
 async function cargarReporteVentasPeriodo() {
   const tbody = document.getElementById("repVentasPeriodoTabla");
@@ -7940,14 +8330,26 @@ function _aplicarReporteVentas(data, tbody, resumenWrap) {
     <div class="col-6 col-md-3"><div class="card p-2 text-center"><div class="text-muted" style="font-size:11.5px;">Total Pedidos</div><div class="money fw-bold">$${Number(r.totalPedidos || 0).toLocaleString("es-AR")}</div></div></div>
     <div class="col-6 col-md-3"><div class="card p-2 text-center"><div class="text-muted" style="font-size:11.5px;">Total general</div><div class="money fw-bold">$${Number(r.totalGeneral || 0).toLocaleString("es-AR")}</div></div></div>
     <div class="col-6 col-md-3"><div class="card p-2 text-center"><div class="text-muted" style="font-size:11.5px;">Ticket promedio</div><div class="money fw-bold">$${Number(r.ticketPromedio || 0).toLocaleString("es-AR")}</div></div></div>`;
-  if (!data.dias || data.dias.length === 0) {
+
+  // Más reciente arriba, como en el resto de las tablas de reportes
+  const diasOrdenados = data.dias ? [...data.dias].sort((a,b) => String(b.fecha).localeCompare(String(a.fecha))) : [];
+  _repDatosActuales.ventasPeriodo = diasOrdenados;
+  renderReporteVentasPeriodo();
+}
+
+/** Renderiza la tabla de ventas por período respetando el límite elegido (10 / 20 / todos). */
+function renderReporteVentasPeriodo() {
+  const tbody = document.getElementById("repVentasPeriodoTabla");
+  if (!tbody) return;
+  const diasOrdenados = _repDatosActuales.ventasPeriodo;
+
+  if (!diasOrdenados || diasOrdenados.length === 0) {
     tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3">Sin ventas para el rango elegido</td></tr>`;
     return;
   }
 
-  // Más reciente arriba, como en el resto de las tablas de reportes
-  const diasOrdenados = [...data.dias].sort((a,b) => String(b.fecha).localeCompare(String(a.fecha)));
-  tbody.innerHTML = diasOrdenados.map(d => {
+  const lista = _limitarReporte(diasOrdenados, "ventasPeriodo");
+  tbody.innerHTML = lista.map(d => {
     const fecha = d.fecha ? new Date(d.fecha + "T12:00:00").toLocaleDateString("es-AR") : "—";
     return `
       <tr>
@@ -8018,7 +8420,8 @@ function renderReporteProductos(productos, filtro = "") {
     return;
   }
 
-  tbody.innerHTML = lista.map(p => `
+  const listaLimitada = _limitarReporte(lista, "productos");
+  tbody.innerHTML = listaLimitada.map(p => `
     <tr>
       <td class="mono">${escapeHtml(p.CODIGO)}</td>
       <td>${escapeHtml(p.PRODUCTO)}</td>
@@ -8045,23 +8448,32 @@ async function cargarReporteCategorias() {
     if (!data.success) return;
 
     sincronizarRangoReportes(data.desde, data.hasta);
-
-    if (!data.categorias || data.categorias.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">Sin ventas para el rango elegido</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = data.categorias.map(c => `
-      <tr>
-        <td>${escapeHtml(c.categoria)}</td>
-        <td class="money">${Number(c.cantidad || 0).toLocaleString("es-AR")}</td>
-        <td class="money">$${Number(c.ingresos || 0).toLocaleString("es-AR")}</td>
-      </tr>`).join("");
+    _repDatosActuales.categorias = data.categorias || [];
+    renderReporteCategorias();
 
   } catch (error) {
     console.error("Error al cargar reporte de ventas por categoría:", error);
     tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">Error al cargar el reporte</td></tr>`;
   }
+}
+
+function renderReporteCategorias() {
+  const tbody = document.getElementById("repCategoriasTabla");
+  if (!tbody) return;
+  const categorias = _repDatosActuales.categorias;
+
+  if (!categorias || categorias.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">Sin ventas para el rango elegido</td></tr>`;
+    return;
+  }
+
+  const lista = _limitarReporte(categorias, "categorias");
+  tbody.innerHTML = lista.map(c => `
+    <tr>
+      <td>${escapeHtml(c.categoria)}</td>
+      <td class="money">${Number(c.cantidad || 0).toLocaleString("es-AR")}</td>
+      <td class="money">$${Number(c.ingresos || 0).toLocaleString("es-AR")}</td>
+    </tr>`).join("");
 }
 
 /* ---- Reporte 4: Formas de pago ---- */
@@ -8074,23 +8486,32 @@ async function cargarReporteFormasPago() {
     if (!data.success) return;
 
     sincronizarRangoReportes(data.desde, data.hasta);
-
-    if (!data.formas || data.formas.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">Sin ventas para el rango elegido</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = data.formas.map(f => `
-      <tr>
-        <td>${escapeHtml(f.forma)}</td>
-        <td class="money">${Number(f.cantidad || 0).toLocaleString("es-AR")}</td>
-        <td class="money">$${Number(f.total || 0).toLocaleString("es-AR")}</td>
-      </tr>`).join("");
+    _repDatosActuales.formasPago = data.formas || [];
+    renderReporteFormasPago();
 
   } catch (error) {
     console.error("Error al cargar reporte de formas de pago:", error);
     tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">Error al cargar el reporte</td></tr>`;
   }
+}
+
+function renderReporteFormasPago() {
+  const tbody = document.getElementById("repFormasPagoTabla");
+  if (!tbody) return;
+  const formas = _repDatosActuales.formasPago;
+
+  if (!formas || formas.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">Sin ventas para el rango elegido</td></tr>`;
+    return;
+  }
+
+  const lista = _limitarReporte(formas, "formasPago");
+  tbody.innerHTML = lista.map(f => `
+    <tr>
+      <td>${escapeHtml(f.forma)}</td>
+      <td class="money">${Number(f.cantidad || 0).toLocaleString("es-AR")}</td>
+      <td class="money">$${Number(f.total || 0).toLocaleString("es-AR")}</td>
+    </tr>`).join("");
 }
 
 /* ---- Reporte 5: Historial de cierres de caja ---- */
@@ -8106,31 +8527,40 @@ async function cargarReporteCierres() {
     if (!data.success) return;
 
     sincronizarRangoReportes(data.desde, data.hasta);
-
-    if (!data.cierres || data.cierres.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-3">Sin cierres para el rango elegido</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = data.cierres.map(c => {
-      const fecha = c.FECHA ? new Date(c.FECHA).toLocaleDateString("es-AR") : "—";
-      const totalDif = Number(c.TOTAL_DIFERENCIA || 0);
-      const claseDif = Math.abs(totalDif) < 1 ? "cc-dif-ok" : (totalDif > 0 ? "cc-dif-sobra" : "cc-dif-falta");
-      const signo = totalDif > 0 ? "+" : "";
-      return `
-      <tr>
-        <td>${escapeHtml(fecha)}</td>
-        <td class="money">$${Number(c.TOTAL_ESPERADO || 0).toLocaleString("es-AR")}</td>
-        <td class="money">$${Number(c.TOTAL_CONTADO || 0).toLocaleString("es-AR")}</td>
-        <td class="money ${claseDif}">${signo}$${Math.round(totalDif).toLocaleString("es-AR")}</td>
-        <td>${escapeHtml(c.VENDEDOR || "—")}</td>
-      </tr>`;
-    }).join("");
+    _repDatosActuales.cierres = data.cierres || [];
+    renderReporteCierres();
 
   } catch (error) {
     console.error("Error al cargar reporte de cierres de caja:", error);
     tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-3">Error al cargar el reporte</td></tr>`;
   }
+}
+
+function renderReporteCierres() {
+  const tbody = document.getElementById("repCierresTabla");
+  if (!tbody) return;
+  const cierres = _repDatosActuales.cierres;
+
+  if (!cierres || cierres.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-3">Sin cierres para el rango elegido</td></tr>`;
+    return;
+  }
+
+  const lista = _limitarReporte(cierres, "cierres");
+  tbody.innerHTML = lista.map(c => {
+    const fecha = c.FECHA ? new Date(c.FECHA).toLocaleDateString("es-AR") : "—";
+    const totalDif = Number(c.TOTAL_DIFERENCIA || 0);
+    const claseDif = Math.abs(totalDif) < 1 ? "cc-dif-ok" : (totalDif > 0 ? "cc-dif-sobra" : "cc-dif-falta");
+    const signo = totalDif > 0 ? "+" : "";
+    return `
+    <tr>
+      <td>${escapeHtml(fecha)}</td>
+      <td class="money">$${Number(c.TOTAL_ESPERADO || 0).toLocaleString("es-AR")}</td>
+      <td class="money">$${Number(c.TOTAL_CONTADO || 0).toLocaleString("es-AR")}</td>
+      <td class="money ${claseDif}">${signo}$${Math.round(totalDif).toLocaleString("es-AR")}</td>
+      <td>${escapeHtml(c.VENDEDOR || "—")}</td>
+    </tr>`;
+  }).join("");
 }
 
 /* ---- Reporte 6: Clientes que más compran ---- */
@@ -8146,24 +8576,33 @@ async function cargarReporteClientes() {
     if (!data.success) return;
 
     sincronizarRangoReportes(data.desde, data.hasta);
-
-    if (!data.clientes || data.clientes.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3">Sin pedidos para el rango elegido</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = data.clientes.map(c => `
-      <tr>
-        <td>${escapeHtml(c.CLIENTE)}</td>
-        <td>${escapeHtml(c.EMPRESA || "—")}</td>
-        <td class="money">${Number(c.PEDIDOS || 0).toLocaleString("es-AR")}</td>
-        <td class="money">$${Number(c.TOTAL || 0).toLocaleString("es-AR")}</td>
-      </tr>`).join("");
+    _repDatosActuales.clientes = data.clientes || [];
+    renderReporteClientes();
 
   } catch (error) {
     console.error("Error al cargar reporte de clientes:", error);
     tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3">Error al cargar el reporte</td></tr>`;
   }
+}
+
+function renderReporteClientes() {
+  const tbody = document.getElementById("repClientesTabla");
+  if (!tbody) return;
+  const clientes = _repDatosActuales.clientes;
+
+  if (!clientes || clientes.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3">Sin pedidos para el rango elegido</td></tr>`;
+    return;
+  }
+
+  const lista = _limitarReporte(clientes, "clientes");
+  tbody.innerHTML = lista.map(c => `
+    <tr>
+      <td>${escapeHtml(c.CLIENTE)}</td>
+      <td>${escapeHtml(c.EMPRESA || "—")}</td>
+      <td class="money">${Number(c.PEDIDOS || 0).toLocaleString("es-AR")}</td>
+      <td class="money">$${Number(c.TOTAL || 0).toLocaleString("es-AR")}</td>
+    </tr>`).join("");
 }
 
 /* ---- Exportar cualquiera de los 6 reportes a PDF ---- */
@@ -8222,6 +8661,11 @@ function exportarReportePDF(cardId, tituloReporte) {
 =================================================================== */
 
 let _rcCharts = {}; // instancias de Chart.js activas, para poder destruirlas antes de re-dibujar
+
+/** Días hacia adelante que "Sugerido reponer" y "Presupuesto sugerido" intentan
+ *  cubrir. Es independiente del rango de fechas de arriba: ese rango solo define
+ *  con qué venta diaria promedio se calcula, no para cuántos días se compra. */
+let _rcDiasCobertura = 30;
 
 function _rcRangoFechas() {
   const desde = document.getElementById("rcDesde").value;
@@ -8362,9 +8806,12 @@ function _renderReporteCompras(productos, dias, tendenciaPorCategoria) {
   _rcProductosActuales = productos || [];
   _rcDiasActuales = dias;
 
+  _rcSeleccionados.clear();
+  _rcActualizarBarraSeleccion();
+
   if (!productos || productos.length === 0) {
     document.getElementById("rcSemaforoTabla").innerHTML =
-      `<tr><td colspan="7" class="text-center text-muted py-3">Sin ventas para el rango elegido</td></tr>`;
+      `<tr><td colspan="9" class="text-center text-muted py-3">Sin ventas para el rango elegido</td></tr>`;
     ["rcKpiSinStock","rcKpiCritico"].forEach(id => actualizarElemento(id, 0));
     ["rcKpiTicket","rcKpiPresupuesto"].forEach(id => actualizarElemento(id, "$0"));
     Object.values(_rcCharts).forEach(c => c && c.destroy());
@@ -8379,12 +8826,12 @@ function _renderReporteCompras(productos, dias, tendenciaPorCategoria) {
   const totalVendidos = productos.reduce((a,p)=>a+p.vendidos,0);
   const ticketProm = totalVendidos > 0 ? totalIngresos / totalVendidos : 0;
 
-  // presupuesto sugerido: para productos en rojo/amarillo/sin stock, cubrir 30 días de venta al precio unitario estimado
+  // presupuesto sugerido: para productos en rojo/amarillo/sin stock, cubrir N días (selector) de venta al precio unitario estimado
   const presupuesto = productos
     .filter(p => ["critico","atencion","sinstock"].includes(_rcEstado(p, dias)))
     .reduce((acc,p) => {
       const precioUnit = p.vendidos > 0 ? p.ingresos / p.vendidos : 0;
-      const faltante = Math.max(0, (_rcVentaDiaria(p, dias) * 30) - p.stock);
+      const faltante = Math.max(0, (_rcVentaDiaria(p, dias) * _rcDiasCobertura) - p.stock);
       return acc + faltante * precioUnit;
     }, 0);
 
@@ -8393,6 +8840,34 @@ function _renderReporteCompras(productos, dias, tendenciaPorCategoria) {
   actualizarElemento("rcKpiTicket",     "$" + Math.round(ticketProm).toLocaleString("es-AR"));
   actualizarElemento("rcKpiPresupuesto","$" + Math.round(presupuesto).toLocaleString("es-AR"));
 
+  /* ---- Gráficos: los datos se guardan siempre, pero solo se dibujan si el
+     acordeón "Ver gráficos y tendencias" ya está abierto — dibujar un canvas
+     oculto (details cerrado = ancho 0) deja los charts rotos hasta que se
+     redimensiona la ventana. Si está cerrado, _rcDibujarGraficos() se llama
+     recién cuando el usuario lo abre (ver onclick del <summary>). ---- */
+  _rcDatosGraficosPendientes = { productos, tendenciaPorCategoria };
+  const detailsGraficos = document.getElementById("rcGraficosDetails");
+  if (detailsGraficos && detailsGraficos.open) {
+    _rcDibujarGraficos(productos, tendenciaPorCategoria);
+  }
+
+  /* ---- Tabla semáforo ---- */
+  _rcAplicarFiltrosTabla();
+}
+
+/* Datos en espera de dibujarse la primera vez que se abre el acordeón de gráficos */
+let _rcDatosGraficosPendientes = null;
+
+/** Se llama al abrir/cerrar el <details> de gráficos. Si se acaba de abrir y
+ *  todavía no se dibujó nada con los datos actuales, dibuja ahora que el
+ *  canvas ya tiene ancho real. */
+function _rcRedibujarSiEstaAbierto() {
+  const detailsGraficos = document.getElementById("rcGraficosDetails");
+  if (!detailsGraficos || !detailsGraficos.open || !_rcDatosGraficosPendientes) return;
+  _rcDibujarGraficos(_rcDatosGraficosPendientes.productos, _rcDatosGraficosPendientes.tendenciaPorCategoria);
+}
+
+function _rcDibujarGraficos(productos, tendenciaPorCategoria) {
   /* ---- Destruir gráficos previos antes de re-dibujar (evita fugas al cambiar de fecha) ---- */
   Object.values(_rcCharts).forEach(c => c && c.destroy());
   _rcCharts = {};
@@ -8446,8 +8921,7 @@ function _renderReporteCompras(productos, dias, tendenciaPorCategoria) {
   _rcTendenciaActual = tendenciaPorCategoria; // se guarda para poder redibujar al cambiar el selector Día/Semana
   _rcRedibujarTendencia();
 
-  /* ---- Tabla semáforo ---- */
-  _rcAplicarFiltrosTabla();
+  _rcDatosGraficosPendientes = null;
 }
 
 /* Estado en memoria de la tendencia, para redibujar sin re-pedir datos al cambiar el selector */
@@ -8603,6 +9077,31 @@ function _rcRedibujarTendencia() {
 
 /** Re-renderiza SOLO la tabla semáforo aplicando los filtros de estado y cantidad,
  *  sin volver a pedir datos ni redibujar los gráficos. */
+/** Se llama al cambiar el selector "Cubrir próximos N días". No vuelve a pedir
+ *  datos al backend — recalcula con lo que ya está en memoria: el KPI de
+ *  presupuesto sugerido, la columna "Sugerido reponer" de la tabla, y el total
+ *  estimado de la lista de compra (si hay productos tildados). */
+function _rcCambiarDiasCobertura() {
+  const select = document.getElementById("rcDiasCobertura");
+  _rcDiasCobertura = Number(select?.value || 30);
+
+  const productos = _rcProductosActuales;
+  const dias = _rcDiasActuales;
+  if (productos && productos.length > 0) {
+    const presupuesto = productos
+      .filter(p => ["critico","atencion","sinstock"].includes(_rcEstado(p, dias)))
+      .reduce((acc,p) => {
+        const precioUnit = p.vendidos > 0 ? p.ingresos / p.vendidos : 0;
+        const faltante = Math.max(0, (_rcVentaDiaria(p, dias) * _rcDiasCobertura) - p.stock);
+        return acc + faltante * precioUnit;
+      }, 0);
+    actualizarElemento("rcKpiPresupuesto", "$" + Math.round(presupuesto).toLocaleString("es-AR"));
+  }
+
+  _rcAplicarFiltrosTabla();
+  _rcActualizarBarraSeleccion();
+}
+
 function _rcAplicarFiltrosTabla() {
   const productos = _rcProductosActuales;
   const dias = _rcDiasActuales;
@@ -8610,26 +9109,35 @@ function _rcAplicarFiltrosTabla() {
   if (!tbody) return;
 
   if (!productos || productos.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">Sin ventas para el rango elegido</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-3">Sin ventas para el rango elegido</td></tr>`;
     return;
   }
 
   const filtroEstado = document.getElementById("rcFiltroEstado")?.value || "todos";
   const filtroCantidad = document.getElementById("rcFiltroCantidad")?.value || "10";
+  const busqueda = (document.getElementById("rcBuscarProducto")?.value || "").trim().toLowerCase();
 
+  // Sin stock se marca oscuro para distinguirlo de un rojo "crítico" pero
+  // todavía con algo de stock — son dos urgencias distintas de un vistazo.
   const estadoInfo = {
-    sinstock: { clase:"bg-danger",  texto:"Sin stock" },
-    critico:  { clase:"bg-danger",  texto:"Crítico" },
-    atencion: { clase:"bg-warning text-dark", texto:"Atención" },
-    ok:       { clase:"bg-success", texto:"OK" },
+    sinstock: { clase:"bg-dark",    texto:"🚫 Sin stock" },
+    critico:  { clase:"bg-danger",  texto:"🔴 Crítico" },
+    atencion: { clase:"bg-warning text-dark", texto:"🟡 Atención" },
+    ok:       { clase:"bg-success", texto:"🟢 OK" },
   };
 
   let filtrados = productos.filter(p => filtroEstado === "todos" || _rcEstado(p, dias) === filtroEstado);
+  if (busqueda) {
+    filtrados = filtrados.filter(p =>
+      String(p.nombre || "").toLowerCase().includes(busqueda) ||
+      String(p.codigo || "").toLowerCase().includes(busqueda));
+  }
   let ordenados = filtrados.sort((a,b)=> _rcCobertura(a, dias) - _rcCobertura(b, dias));
   if (filtroCantidad !== "todos") ordenados = ordenados.slice(0, Number(filtroCantidad));
 
   if (ordenados.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">Ningún producto en ese estado</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-3">Ningún producto en ese estado</td></tr>`;
+    _rcActualizarCheckTodos();
     return;
   }
 
@@ -8637,18 +9145,132 @@ function _rcAplicarFiltrosTabla() {
     const e = _rcEstado(p, dias);
     const info = estadoInfo[e];
     const cob = _rcCobertura(p, dias);
-    const cobTxt = cob === Infinity ? "—" : Math.round(cob) + " días";
+    const cobTxt = cob === Infinity ? "—" : `~${Math.round(cob)} días`;
+
+    // Sugerido reponer: cuánto falta para cubrir _rcDiasCobertura días de venta al ritmo actual.
+    // Solo tiene sentido mostrarlo para lo que hay que reponer; en "OK" no se sugiere nada.
+    const faltante = ["sinstock","critico","atencion"].includes(e)
+      ? Math.max(0, Math.round(_rcVentaDiaria(p, dias) * _rcDiasCobertura - p.stock))
+      : 0;
+    const sugeridoTxt = faltante > 0 ? `<strong>${faltante.toLocaleString("es-AR")}</strong> uds.` : "—";
+
+    const marcado = _rcSeleccionados.has(String(p.codigo));
     return `
       <tr>
-        <td class="mono">${escapeHtml(p.codigo)}</td>
-        <td>${escapeHtml(p.nombre)}</td>
-        <td>${escapeHtml(p.categoria)}</td>
-        <td class="money">${p.vendidos.toLocaleString("es-AR")}</td>
-        <td class="money">${p.stock.toLocaleString("es-AR")}</td>
-        <td class="money">${cobTxt}</td>
+        <td><input type="checkbox" class="rc-check-fila" data-codigo="${escapeHtml(p.codigo)}" ${marcado ? "checked" : ""} onchange="_rcToggleSeleccion('${escapeJsAttr(p.codigo)}', this.checked)"></td>
+        <td class="mono" title="${escapeHtml(p.codigo)}">${escapeHtml(p.codigo)}</td>
+        <td title="${escapeHtml(p.nombre)}">${escapeHtml(p.nombre)}</td>
+        <td title="${escapeHtml(p.categoria)}">${escapeHtml(p.categoria)}</td>
+        <td class="money" data-label="Vendidos">${p.vendidos.toLocaleString("es-AR")}</td>
+        <td class="money" data-label="Stock">${p.stock.toLocaleString("es-AR")}</td>
+        <td class="money" data-label="Cobertura">${cobTxt}</td>
+        <td class="money" data-label="Sugerido reponer">${sugeridoTxt}</td>
         <td><span class="badge ${info.clase}">${info.texto}</span></td>
       </tr>`;
   }).join("");
+
+  _rcActualizarCheckTodos();
+}
+
+/* ===================================================================
+   Lista de compra — tildar productos del semáforo (sin gráficos ni
+   modales, solo checkboxes) y copiar un resumen listo para mandar
+   al proveedor o pegar en una nota.
+=================================================================== */
+const _rcSeleccionados = new Set(); // códigos tildados, persiste entre re-renders por filtro/búsqueda
+
+function _rcToggleSeleccion(codigo, marcado) {
+  if (marcado) _rcSeleccionados.add(String(codigo));
+  else _rcSeleccionados.delete(String(codigo));
+  _rcActualizarCheckTodos();
+  _rcActualizarBarraSeleccion();
+}
+
+/** Tilda/destilda todas las filas actualmente visibles en la tabla (no las que
+ *  quedaron ocultas por el filtro), igual que el "seleccionar todos" de Productos. */
+function _rcToggleTodos(headerCheckbox) {
+  document.querySelectorAll(".rc-check-fila").forEach(chk => {
+    chk.checked = headerCheckbox.checked;
+    const codigo = chk.dataset.codigo;
+    if (headerCheckbox.checked) _rcSeleccionados.add(codigo);
+    else _rcSeleccionados.delete(codigo);
+  });
+  _rcActualizarBarraSeleccion();
+}
+
+/** Refleja en el checkbox de cabecera si todas/algunas/ninguna de las filas visibles están tildadas. */
+function _rcActualizarCheckTodos() {
+  const checkTodos = document.getElementById("rcCheckTodos");
+  if (!checkTodos) return;
+  const filas = Array.from(document.querySelectorAll(".rc-check-fila"));
+  if (filas.length === 0) { checkTodos.checked = false; checkTodos.indeterminate = false; return; }
+  const marcadas = filas.filter(f => f.checked).length;
+  checkTodos.checked = marcadas === filas.length;
+  checkTodos.indeterminate = marcadas > 0 && marcadas < filas.length;
+}
+
+function _rcVaciarSeleccion() {
+  _rcSeleccionados.clear();
+  document.querySelectorAll(".rc-check-fila").forEach(chk => chk.checked = false);
+  _rcActualizarCheckTodos();
+  _rcActualizarBarraSeleccion();
+}
+
+/** Muestra/oculta la barra "N seleccionados" y actualiza el total estimado de compra. */
+function _rcActualizarBarraSeleccion() {
+  const barra = document.getElementById("rcListaCompraBar");
+  const info = document.getElementById("rcListaCompraInfo");
+  if (!barra || !info) return;
+
+  const cantidad = _rcSeleccionados.size;
+  if (cantidad === 0) { barra.style.display = "none"; return; }
+
+  const dias = _rcDiasActuales;
+  let totalEstimado = 0;
+  _rcSeleccionados.forEach(codigo => {
+    const p = _rcProductosActuales.find(x => String(x.codigo) === codigo);
+    if (!p) return;
+    const precioUnit = p.vendidos > 0 ? p.ingresos / p.vendidos : 0;
+    const faltante = Math.max(0, _rcVentaDiaria(p, dias) * _rcDiasCobertura - p.stock);
+    totalEstimado += faltante * precioUnit;
+  });
+
+  barra.style.display = "block";
+  info.textContent = `${cantidad} producto${cantidad === 1 ? "" : "s"} seleccionado${cantidad === 1 ? "" : "s"} · ≈$${Math.round(totalEstimado).toLocaleString("es-AR")} estimado`;
+}
+
+/** Arma un texto simple (código, nombre, cantidad sugerida) con los productos
+ *  tildados y lo copia al portapapeles — para pegarlo en un chat/nota al proveedor. */
+async function _rcCopiarListaCompra() {
+  if (_rcSeleccionados.size === 0) { toast("Tildá al menos un producto", "error"); return; }
+
+  const dias = _rcDiasActuales;
+  const lineas = [];
+  _rcSeleccionados.forEach(codigo => {
+    const p = _rcProductosActuales.find(x => String(x.codigo) === codigo);
+    if (!p) return;
+    const faltante = Math.max(0, Math.round(_rcVentaDiaria(p, dias) * _rcDiasCobertura - p.stock));
+    lineas.push(`${p.codigo} — ${p.nombre} — ${faltante > 0 ? faltante + " uds." : "a definir"}`);
+  });
+
+  const texto = `Lista de compra (${lineas.length} productos)\n` + lineas.join("\n");
+
+  try {
+    await navigator.clipboard.writeText(texto);
+    toast("Lista de compra copiada al portapapeles", "success");
+  } catch (error) {
+    console.error("No se pudo copiar la lista de compra:", error);
+    toast("No se pudo copiar automáticamente — seleccioná y copiá el texto manualmente", "error");
+  }
+}
+
+/** Filtro rápido desde las tarjetas KPI "Sin stock" / "Cobertura < 7 días":
+ *  aplica el filtro de estado correspondiente y lleva la vista a la tabla. */
+function _rcFiltrarDesdeKpi(estado) {
+  const select = document.getElementById("rcFiltroEstado");
+  if (select) { select.value = estado; _rcAplicarFiltrosTabla(); }
+  const tabla = document.getElementById("rcSemaforoCard");
+  if (tabla) tabla.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /* =====================================================================
@@ -8690,7 +9312,12 @@ async function cargarMovimientosCajaHoy() {
   if (le) le.textContent = `Egresos — ${fechaLabel}`;
 
   // Caché 60 segundos por fecha
-  const CACHE_KEY = "vpos_cache_movimientos_" + fecha;
+  // v2: se cambió el nombre de la clave para descartar cualquier caché
+  // vieja guardada en localStorage antes de este fix (sobre todo en
+  // Electron, donde localStorage persiste entre sesiones y podía
+  // quedar con movimientos sin MOVIMIENTO_ID armado correctamente,
+  // causando el error "No se encontró el movimiento 'undefined'").
+  const CACHE_KEY = "vpos_cache_movimientos_v2_" + fecha;
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
@@ -8763,8 +9390,8 @@ function renderTablaMovimientosCaja(lista) {
         ${esIngreso ? "+" : "-"}$${Number(m.MONTO || 0).toLocaleString("es-AR")}
       </td>
       <td>${escapeHtml(m.VENDEDOR || "—")}</td>
-      <td>${esVendedorRol ? "" : `<button class="btn btn-outline-danger btn-sm"
-        onclick="confirmarEliminarMovimiento('${escapeHtml(m.MOVIMIENTO_ID)}', '${escapeHtml(m.MOTIVO || "")}')">✕</button>`}</td>
+      <td>${(esVendedorRol || !m.MOVIMIENTO_ID) ? "" : `<button class="btn btn-outline-danger btn-sm"
+        onclick="confirmarEliminarMovimiento('${escapeJsAttr(m.MOVIMIENTO_ID)}', '${escapeJsAttr(m.MOTIVO || "")}')">✕</button>`}</td>
     </tr>`;
   });
 
@@ -8811,7 +9438,8 @@ async function eliminarMovimientoCajaForm(movimientoId) {
 
     toast("Movimiento eliminado", "success");
     const fechaMov = document.getElementById("mcFechaSelector")?.value || new Date().toISOString().slice(0, 10);
-    try { localStorage.removeItem("vpos_cache_movimientos_" + fechaMov); } catch(e) {}
+    try { localStorage.removeItem("vpos_cache_movimientos_v2_" + fechaMov); } catch(e) {}
+    try { localStorage.removeItem("vpos_cache_movimientos_" + fechaMov); } catch(e) {} // limpieza de clave vieja
     try { localStorage.removeItem("vpos_cache_cierre_" + fechaMov); } catch(e) {}
     try { localStorage.removeItem("vpos_cache_cierre_ayer"); } catch(e) {}
     cargarMovimientosCajaHoy();
@@ -8886,6 +9514,7 @@ function actualizarSeleccionEtiquetas() {
   const btnEtiquetas = document.getElementById("btnGenerarEtiquetas");
   const btnQR = document.getElementById("btnGenerarQR");
   const btnQROffline = document.getElementById("btnGenerarQROffline");
+  const btnHacerVisibles = document.getElementById("btnHacerVisibles");
 
   const cantidad = checks.length;
 
@@ -8900,6 +9529,90 @@ function actualizarSeleccionEtiquetas() {
   if (btnEtiquetas) btnEtiquetas.disabled = cantidad === 0;
   if (btnQR) btnQR.disabled = cantidad === 0;
   if (btnQROffline) btnQROffline.disabled = cantidad === 0;
+  if (btnHacerVisibles) btnHacerVisibles.disabled = cantidad === 0;
+}
+
+/**
+ * Publica (PUBLICADO = "SI") todos los productos tildados, sin tener
+ * que entrar a editarlos uno por uno. Pensado para usarse junto con
+ * el filtro "Ocultos (no publicados)": el usuario filtra, tilda los
+ * que quiere reactivar y aprieta este botón una sola vez.
+ *
+ * El backend (actualizarProducto) sobreescribe TODO el producto, así
+ * que cada llamada manda el registro completo tal cual está hoy en
+ * productosAdminGlobal, cambiando únicamente PUBLICADO a "SI".
+ */
+async function hacerVisiblesProductosSeleccionados() {
+  const codigos = obtenerCodigosSeleccionados();
+  if (codigos.length === 0) { toast("Seleccioná al menos un producto", "error"); return; }
+
+  const yaVisibles = codigos.filter(cod => {
+    const p = productosAdminGlobal.find(x => String(x.CODIGO) === String(cod));
+    return p && String(p.PUBLICADO || "").toUpperCase() === "SI";
+  });
+  const aActualizar = codigos.length - yaVisibles.length;
+
+  if (aActualizar === 0) {
+    toast("Los productos seleccionados ya estaban visibles", "success");
+    return;
+  }
+
+  const mensaje = codigos.length === 1
+    ? "¿Publicar este producto para que vuelva a verse en el catálogo/POS?"
+    : `¿Publicar ${codigos.length} productos seleccionados para que vuelvan a verse en el catálogo/POS?`;
+
+  confirmarAccion(mensaje, async () => {
+    const btn = document.getElementById("btnHacerVisibles");
+    const textoOriginal = btn ? btn.innerHTML : "";
+    if (btn) { btn.disabled = true; btn.innerHTML = "Publicando..."; }
+
+    let exitosos = 0, fallidos = 0;
+
+    // Uno por vez (no en paralelo) para no saturar el backend de Apps
+    // Script, que ya de por sí es lento con muchas requests simultáneas.
+    for (const codigo of codigos) {
+      const p = productosAdminGlobal.find(x => String(x.CODIGO) === String(codigo));
+      if (!p) { fallidos++; continue; }
+
+      try {
+        const params = new URLSearchParams({
+          action: "actualizarProducto",
+          rol: obtenerRolActual(),
+          codigoOriginal: p.CODIGO,
+          CODIGO: p.CODIGO,
+          PRODUCTO: p.PRODUCTO || "",
+          CATEGORIA: p.CATEGORIA || "",
+          ALIAS: p.ALIAS || "",
+          PRECIO: p.PRECIO ?? 0,
+          STOCK: p.STOCK ?? 0,
+          IMAGEN: p.IMAGEN || "",
+          PUBLICADO: "SI",
+          DESTACADO: p.DESTACADO || "NO",
+          OFERTA: p.OFERTA || "NO",
+          CODIGO_CAJA: p.CODIGO_CAJA || "",
+          UNIDADES_POR_CAJA: p.UNIDADES_POR_CAJA || 0,
+          PRECIO_CAJA: p.PRECIO_CAJA || 0
+        });
+        const response = await fetchAPI(API_URL + "?" + params.toString());
+        const data = await response.json();
+        if (data.success) exitosos++; else fallidos++;
+      } catch (error) {
+        console.error("Error al publicar producto", codigo, error);
+        fallidos++;
+      }
+    }
+
+    if (btn) { btn.disabled = false; btn.innerHTML = textoOriginal; }
+
+    if (fallidos === 0) {
+      toast(exitosos === 1 ? "1 producto publicado" : `${exitosos} productos publicados`, "success");
+    } else {
+      toast(`${exitosos} publicados, ${fallidos} con error`, exitosos > 0 ? "success" : "error");
+    }
+
+    productosPOS = []; // refrescar catálogo del POS en memoria
+    cargarProductos();
+  }, "👁️ Publicar productos");
 }
 
 /** Toggles every visible product checkbox via the header checkbox */
@@ -9730,6 +10443,91 @@ async function activarLicencia() {
    MERCADO PAGO — Cobro con QR (integrado desde pos-offline)
 ========================================================= */
 
+/**
+ * Muestra u oculta el campo "Nombre de esta caja" según el rol elegido
+ * — solo el servidor necesita un nombre propio (es el que se anuncia
+ * por la red para que los clientes lo encuentren, ver local-discovery.js
+ * → iniciarAnuncioServidor). Una caja cliente no anuncia nada, así que
+ * no necesita nombre.
+ */
+function actualizarVisibilidadCampoNombreCaja(rol) {
+  const campo = document.getElementById("campoNombreCaja");
+  if (campo) campo.style.display = rol === "servidor" ? "block" : "none";
+}
+
+/** Carga el estado actual de la config de red al abrir la tarjeta — rol guardado, nombre de caja, y a quién está viendo (servidor propio o servidor encontrado) */
+async function cargarConfigRedForm() {
+  const bridge = window.veekpos || window.posOffline;
+  if (!bridge) return;
+
+  const estadoEl = document.getElementById("estadoRedLocal");
+
+  try {
+    const { rol, nombreCaja } = await bridge.obtenerRolRed();
+    document.getElementById("cfgRolRed").value = rol || "";
+    document.getElementById("cfgNombreCaja").value = nombreCaja || "";
+    actualizarVisibilidadCampoNombreCaja(rol || "");
+
+    if (!estadoEl) return;
+
+    if (rol === "servidor") {
+      const { ip, puertoHttp } = await bridge.obtenerIpLocal();
+      estadoEl.innerHTML = ip
+        ? `🟢 Esta caja es el <b>servidor</b>. Las demás cajas (y la pantalla del cliente, si usás una) se conectan solas por red — si necesitás la dirección a mano: <code>${ip}:${puertoHttp}</code>`
+        : `🟢 Esta caja es el <b>servidor</b>, pero no se pudo detectar la IP de red local (¿está conectada a wifi/cable?).`;
+
+    } else if (rol === "cliente") {
+      const estado = await bridge.obtenerEstadoConexionRed();
+      if (estado.conectado) {
+        estadoEl.textContent = "🟢 Conectada al servidor correctamente.";
+      } else if (estado.servidorConocido) {
+        estadoEl.textContent = "🟡 Se encontró un servidor en la red, pero no responde ahora mismo.";
+      } else {
+        estadoEl.textContent = "🟡 Buscando el servidor en la red local...";
+      }
+
+    } else {
+      const mpConfigurado = await bridge.mercadoPagoDisponible?.().catch(() => false);
+      const { ip, puertoHttp } = await bridge.obtenerIpLocal().catch(() => ({ ip: null }));
+
+      if (mpConfigurado) {
+        estadoEl.innerHTML = ip
+          ? `⚪ Modo independiente — esta caja no comparte datos con otras por red local. La pantalla del cliente para QR sí está activa (hay Mercado Pago configurado): <code>${ip}:${puertoHttp}</code>`
+          : `⚪ Modo independiente. La pantalla del cliente debería estar activa, pero no se pudo detectar la IP de red local (¿está conectada a wifi/cable?).`;
+      } else {
+        estadoEl.innerHTML = ip
+          ? `⚪ Modo independiente — esta caja no comparte datos con otras por red local. La pantalla del cliente para QR no está activa todavía porque no hay Mercado Pago configurado (IP de esta caja, por si la necesitás más adelante: <code>${ip}:${puertoHttp}</code>).`
+          : `⚪ Modo independiente — esta caja no comparte datos con otras por red local. La pantalla del cliente para QR no está activa (no hay Mercado Pago configurado).`;
+      }
+    }
+  } catch (error) {
+    if (estadoEl) estadoEl.textContent = "No se pudo cargar el estado de la red.";
+  }
+}
+
+/** Guarda el rol de red elegido (botón "Guardar configuración de red") */
+async function guardarConfigRed() {
+  const bridge = window.veekpos || window.posOffline;
+  if (!bridge) return;
+
+  const rol = document.getElementById("cfgRolRed").value;
+  const nombreCaja = document.getElementById("cfgNombreCaja").value.trim();
+
+  if (rol === "servidor" && !nombreCaja) {
+    toast("Ponele un nombre a esta caja (ej: Caja 1)", "error");
+    return;
+  }
+
+  try {
+    await bridge.fijarRolRed(rol, nombreCaja);
+    toast("Configuración de red guardada", "success");
+    await cargarConfigRedForm();
+  } catch (error) {
+    toast("No se pudo guardar la configuración de red", "error");
+  }
+}
+
+
 async function mostrarEstadoMercadoPagoEnConfig() {
   const box = document.getElementById("mpEstadoBox");
   const formularioWrap = document.getElementById("mpFormularioWrap");
@@ -9859,6 +10657,47 @@ async function quitarConfigMercadoPago() {
 
 /* ===================== RED LOCAL MULTI-CAJA (Configuración) ===================== */
 
+/**
+ * DIAGNÓSTICO — abre el mismo modal de cobro con QR, pero con una imagen
+ * falsa (un SVG armado acá mismo, sin pedirle nada a Mercado Pago) y sin
+ * arrancar el polling real. Sirve para probar el comportamiento del modal
+ * (por ejemplo, si el botón "Cancelar" responde) sin necesitar tener
+ * Mercado Pago configurado ni depender de la red — así se puede descartar
+ * rápido si un problema es del modal en sí o de la integración con MP.
+ *
+ * A propósito NO toca mpReferenciaActual ni arranca mpPollingIntervalId:
+ * sin una referencia real no hay nada que consultar, así que el polling
+ * ni se inicia — "Cancelar" acá prueba exactamente el mismo camino de
+ * limpieza (detenerPollingMercadoPago, sacar la clase "show", resetear
+ * los flags) que un cobro real, sin arriesgar nada del carrito actual.
+ */
+function abrirModalQRDePrueba() {
+  const svgFalso = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">
+      <rect width="240" height="240" fill="#eef2ff"/>
+      <text x="120" y="112" text-anchor="middle" font-family="monospace" font-size="16" fill="#1e293b">QR DE PRUEBA</text>
+      <text x="120" y="136" text-anchor="middle" font-family="monospace" font-size="12" fill="#64748b">(no es un cobro real)</text>
+    </svg>
+  `)}`;
+
+  document.getElementById("mpQrMontoLabel").textContent = "$0 (prueba)";
+  document.getElementById("mpQrError").style.display = "none";
+  document.getElementById("mpQrEsperando").style.display = "block";
+  document.getElementById("mpQrImagen").src = svgFalso;
+  document.getElementById("mpQrBackdrop").classList.add("show");
+
+  // Empuja el mismo QR falso a la pantalla/tablet del cliente (si hay
+  // una conectada) — así también se puede probar esa parte sin
+  // necesitar Mercado Pago configurado. Si no hay bridge (versión web)
+  // o la tablet no está conectada, no pasa nada, es un no-op seguro.
+  const bridge = window.veekpos || window.posOffline;
+  if (bridge && typeof bridge.mostrarQrDePruebaEnPantalla === "function") {
+    bridge.mostrarQrDePruebaEnPantalla(svgFalso, 0).catch(() => {});
+  }
+
+  toast("🧪 Modal de prueba — este QR no cobra nada de verdad", "info");
+}
+
 async function iniciarCobroMercadoPago(total) {
   document.getElementById("mpQrMontoLabel").textContent = "$" + Number(total).toLocaleString("es-AR");
   document.getElementById("mpQrError").style.display = "none";
@@ -9883,6 +10722,8 @@ async function iniciarCobroMercadoPago(total) {
 
     mpReferenciaActual = referencia;
     document.getElementById("mpQrImagen").src = resultado.qrImagenDataUrl;
+    mpPollingIniciadoEn = Date.now();
+    mpProcesandoConfirmacion = false;
     mpPollingIntervalId = setInterval(consultarCobroMercadoPagoPolling, 3000);
 
   } catch (error) {
@@ -9900,12 +10741,46 @@ let mpPollingIntervalId = null;
 let mpReferenciaActual  = null;
 let mpVentaEnCurso      = null; // { subtotal, total, itemsSnapshot, recibido }
 
+// Dos problemas reales que tenía este polling, arreglados acá:
+//
+// 1) RACE CONDITION que podía duplicar la venta: setInterval no espera a
+//    que termine la vuelta anterior. Si una consulta a Mercado Pago tarda
+//    más de 3 segundos (red lenta), podían quedar DOS llamadas a
+//    consultarCobroQR "en el aire" al mismo tiempo; si ambas contestaban
+//    "pagada: true" (algo totalmente posible ya que consultan lo mismo),
+//    las dos ejecutaban el bloque de éxito completo → la venta se
+//    guardaba DOS VECES en el backend. `mpProcesandoConfirmacion` corta
+//    esto: se chequea antes Y después del await, así que la segunda
+//    llamada que ya estaba en vuelo cuando la primera confirmó el pago,
+//    al volver de su propio await, ve el flag ya en true y no hace nada.
+//
+// 2) Sin límite de tiempo: si el cliente nunca paga (se arrepiente, no
+//    tiene señal, lo que sea), el polling seguía cada 3 segundos PARA
+//    SIEMPRE, sin avisarle nada al cajero, hasta que alguien tocara
+//    "Cancelar" a mano. `mpPollingIniciadoEn` + el timeout de abajo lo
+//    cortan solos con un aviso, después de 10 minutos sin confirmación.
+let mpProcesandoConfirmacion = false;
+let mpPollingIniciadoEn = null;
+const MP_POLLING_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutos
+
 async function consultarCobroMercadoPagoPolling() {
-  if (!mpReferenciaActual) return;
+  if (!mpReferenciaActual || mpProcesandoConfirmacion) return;
+
+  if (mpPollingIniciadoEn && (Date.now() - mpPollingIniciadoEn) > MP_POLLING_TIMEOUT_MS) {
+    mostrarErrorCobroMercadoPago("Pasaron 10 minutos sin confirmar el pago. Si el cliente todavía va a pagar, generá el QR de nuevo.");
+    return;
+  }
+
   try {
     const bridge = window.veekpos || window.posOffline;
     const resultado = await bridge.consultarCobroQR(mpReferenciaActual);
+
+    // Otra vuelta del intervalo ya se adelantó y confirmó el pago mientras
+    // esta esperaba su propia respuesta — no hacer nada, ya se procesó.
+    if (mpProcesandoConfirmacion) return;
+
     if (resultado.success && resultado.pagada) {
+      mpProcesandoConfirmacion = true; // a partir de acá, ninguna otra vuelta en vuelo va a duplicar esto (ver comentario arriba)
       detenerPollingMercadoPago();
       document.getElementById("mpQrBackdrop").classList.remove("show");
       toast("Pago de Mercado Pago confirmado ✓", "success");
@@ -9930,7 +10805,7 @@ async function consultarCobroMercadoPagoPolling() {
                 action: "guardarVenta",
                 total: total,
                 formaPago: "TRANSFERENCIA",
-                observaciones: etiquetaDescuento ? "Descuento: " + etiquetaDescuento : "",
+                observaciones: etiquetaDescuento ? (ajusteModoPOS === "RECARGO" ? "Recargo: " : "Descuento: ") + etiquetaDescuento : "",
                 carrito: itemsSnapshot,
                 clienteVentaId: clienteVentaIdMP
               })
@@ -9983,6 +10858,8 @@ async function consultarCobroMercadoPagoPolling() {
 
 function mostrarErrorCobroMercadoPago(mensaje) {
   detenerPollingMercadoPago();
+  mpProcesandoConfirmacion = false;
+  mpPollingIniciadoEn = null;
   const el = document.getElementById("mpQrEsperando");
   const err = document.getElementById("mpQrError");
   const txt = document.getElementById("mpQrErrorTexto");
@@ -9997,10 +10874,22 @@ function detenerPollingMercadoPago() {
 
 function cancelarCobroMercadoPago() {
   detenerPollingMercadoPago();
+  mpProcesandoConfirmacion = false;
+  mpPollingIniciadoEn = null;
   const backdrop = document.getElementById("mpQrBackdrop");
   if (backdrop) backdrop.classList.remove("show");
   mpReferenciaActual = null;
   mpVentaEnCurso = null;
+
+  // Avisa también a la pantalla/tablet del cliente (si hay una conectada)
+  // que este cobro se canceló, para que no se quede mostrando un QR
+  // muerto — ver local-server.js → limpiarQrActivo. No pasa nada si no
+  // hay ninguna pantalla conectada, ni si esto corre en la versión web.
+  const bridge = window.veekpos || window.posOffline;
+  if (bridge && typeof bridge.cancelarCobroQR === "function") {
+    bridge.cancelarCobroQR().catch(() => {});
+  }
+
   toast("Cobro cancelado — el ticket sigue abierto", "info");
 }
 
@@ -10998,7 +11887,7 @@ async function cargarUsuarios() {
         <td>${String(u.ACTIVO || "SI").toUpperCase() === "NO" ? '<span class="badge bg-secondary">Inactivo</span>' : '<span class="badge bg-success">Activo</span>'}</td>
         <td>
           <button class="btn btn-sm btn-outline-primary" onclick="abrirModalEditarUsuario('${u.USUARIO_ID}')">✏️</button>
-          <button class="btn btn-sm btn-outline-danger" onclick="eliminarUsuarioClick('${u.USUARIO_ID}', '${escapeHtml(u.NOMBRE || "")}')">🗑️</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="eliminarUsuarioClick('${u.USUARIO_ID}', '${escapeJsAttr(u.NOMBRE || "")}')">🗑️</button>
         </td>
       </tr>`).join("");
 

@@ -74,6 +74,35 @@ async function resolverApiUrlBase(){
 }
 
 /**
+ * Normaliza una URL para que termine en exactamente una "/" (saca
+ * espacios y cualquier cantidad de barras finales, y agrega una sola).
+ * Devuelve "" si no hay valor, para no convertir un campo vacío en "/".
+ * Se usa para el campo "URL del catálogo" de Sheets, que se carga a
+ * mano y puede o no traer la barra final.
+ */
+function normalizarUrlConBarraFinal(url){
+  const limpia = String(url || "").trim();
+  if(!limpia) return "";
+  return limpia.replace(/\/+$/, "") + "/";
+}
+
+// Cachea en una sola Promise la llamada a "?action=configuracionNegocio":
+// tanto config.js como app.js (aplicarApariencia) necesitan esos mismos
+// datos, y sin este cache cada uno terminaba pegándole por separado a
+// Sheets — hasta 3 veces la misma consulta lenta en cada carga de
+// página. Con esto, la primera llamada dispara el fetch real y todas
+// las siguientes reciben la misma Promise ya en vuelo (o resuelta).
+let _configuracionNegocioPromise = null;
+
+async function obtenerConfiguracionNegocioCruda(apiUrl){
+  if(!_configuracionNegocioPromise){
+    _configuracionNegocioPromise = fetch(apiUrl + "?action=configuracionNegocio")
+      .then(res => res.json());
+  }
+  return _configuracionNegocioPromise;
+}
+
+/**
  * Trae la configuración real desde Sheets (a través de la API) y
  * actualiza CONFIG_NEGOCIO. Devuelve una Promise — cada página debe
  * esperarla (await cargarConfigNegocio()) antes de usar los datos
@@ -90,8 +119,7 @@ async function cargarConfigNegocio(){
   }
 
   try{
-    const res = await fetch(apiUrl + "?action=configuracionNegocio");
-    const data = await res.json();
+    const data = await obtenerConfiguracionNegocioCruda(apiUrl);
     if(!data.success || !data.config) return CONFIG_NEGOCIO;
 
     const cfg = data.config;
@@ -102,7 +130,13 @@ async function cargarConfigNegocio(){
       NOMBRE_CORTO: cfg.nombreCorto || CONFIG_NEGOCIO_RESPALDO.NOMBRE_CORTO,
       TEMA: cfg.tema || CONFIG_NEGOCIO_RESPALDO.TEMA,
 
-      URL_SITIO: cfg.urlCatalogo || CONFIG_NEGOCIO_RESPALDO.URL_SITIO,
+      // Se normaliza acá para que dé igual cómo haya quedado cargado
+      // el campo "URL del catálogo" en Sheets (con o sin barra final,
+      // con espacios de más, etc.): si hay valor, siempre termina en
+      // exactamente una "/". De esto dependen el canonical, og:url,
+      // schema.url, y (indirectamente, vía app.js) las URLs canónicas
+      // de producto.
+      URL_SITIO: normalizarUrlConBarraFinal(cfg.urlCatalogo) || CONFIG_NEGOCIO_RESPALDO.URL_SITIO,
       WHATSAPP_NUMERO: cfg.beneficioWhatsappNumero || CONFIG_NEGOCIO_RESPALDO.WHATSAPP_NUMERO,
       WHATSAPP_ICONO_URL: cfg.whatsappIconoUrl || CONFIG_NEGOCIO_RESPALDO.WHATSAPP_ICONO_URL,
       ICONO_URL: cfg.iconoUrl || CONFIG_NEGOCIO_RESPALDO.ICONO_URL,
