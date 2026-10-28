@@ -329,7 +329,8 @@ function depAbrirRecepcion(id) {
     <datalist id="recProductosLocal">${depProductosDelLocal().slice(0, 5000).map(p => `<option value="${depEsc(p.CODIGO)} — ${depEsc(p.PRODUCTO)}"></option>`).join("")}</datalist>
     <div class="mt-2" id="recResumen" style="font-size:13px;"></div>
   `, `<button type="button" class="btn btn-outline-secondary" data-cerrar>Cancelar</button>
-      <button type="button" class="btn btn-success fw-bold" id="btnConfirmarRecepcion" onclick="depConfirmarRecepcion('${depEsc(id)}')">Confirmar recepción</button>`, 640);
+      <button type="button" class="${depEsAdmin() ? "btn btn-outline-success" : "btn btn-success fw-bold"}" id="btnConfirmarRecepcion" onclick="depConfirmarRecepcion('${depEsc(id)}')">Confirmar recepción</button>
+      ${depPuedeIngresar() ? `<button type="button" class="btn btn-primary fw-bold" id="btnRecepcionIngreso" onclick="depTraspasoAIngreso('${depEsc(id)}')" title="Pasa a Ingreso de mercadería para revisar costo, precio de venta y datos antes de sumar el stock">Revisar precios e ingresar →</button>` : ""}`, 760);
   bd.dataset.fijo = "1";
   bd.dataset.traspaso = id;
   depRecepcionResumen();
@@ -496,4 +497,143 @@ window.addEventListener("load", () => depCuandoPanelListo(() => {
     window.depAplicarConfig._tras = true;
   }
   setTimeout(depAplicarMenuTraspasos, 3000);
+}));
+
+
+/* =================== LOCAL: recibir revisando precios (Ingreso de mercadería) ===================
+   "Revisar precios e ingresar" pasa lo que llegó a la sección Ingreso de
+   mercadería como una boleta de origen DEPÓSITO (sin deuda): cada renglón
+   con su costo (el precio del depósito), el precio de venta actual del
+   local, la categoría y la cantidad que llegó. Se corrige igual que
+   cualquier ingreso (✏️ en cada renglón) y al tocar "Guardar boleta" el
+   depósito marca el traspaso como recibido y el local guarda la boleta:
+   stock, costos y precios de venta en un solo paso. */
+
+let depTraspasoEnIngreso = null; // { id, recibidos }
+
+function depPuedeIngresar() {
+  return !esModoDeposito() && (typeof obtenerRolActual !== "function" || obtenerRolActual() !== "vendedor");
+}
+
+function depTraspasoAIngreso(id) {
+  const d = depRecepcionLeer();
+  if (!d) return;
+  const t = d.t;
+  const faltan = d.recibidos.filter(r => r.cantidad > 0 && !depProductoLocal(r.codigoLocal) && !String(r.codigoLocal || "").trim());
+  const seguir = () => {
+    const tcDia = (typeof ingresoTC !== "undefined" && ingresoTC && ingresoTC.valor > 0) ? Number(ingresoTC.valor) : 0;
+    ipCarritoBoleta = [];
+    d.recibidos.forEach((r, n) => {
+      const it = t.items[n];
+      if (!(r.cantidad > 0)) return;
+      const codigo = String(r.codigoLocal || "").trim() || it.codigo;
+      const p = depProductoLocal(codigo);
+      const enUsd = Number(it.precioUsd) > 0;
+      const tc = enUsd ? (Number(it.dolar) || tcDia) : null;
+      const precio = enUsd ? Number(it.precioUsd) : (Number(it.precio) || 0);
+      ipCarritoBoleta.push({
+        codigo, producto: p ? p.PRODUCTO : it.producto, categoria: p ? (p.CATEGORIA || "") : (it.categoria || ""),
+        moneda: enUsd ? "USD" : "ARS", precio, tipoCambio: tc, precioARS: enUsd ? Math.round(precio * (tc || 0) * 100) / 100 : precio,
+        precioVenta: p ? Number(p.PRECIO) || null : null,
+        cantidad: r.cantidad, esNuevo: !p
+      });
+    });
+    depTraspasoEnIngreso = { id, recibidos: d.recibidos };
+    const m = document.getElementById("modalRecepcionTraspaso"); if (m) m.classList.remove("show");
+    mostrarSeccion("ingresoProductos");
+    const set = (i, v) => { const el = document.getElementById(i); if (el) el.value = v; };
+    set("ipbOrigen", "DEPOSITO"); if (typeof onCambioOrigenBoleta === "function") onCambioOrigenBoleta();
+    set("ipbProveedor", (_trasDelDeposito && _trasDelDeposito.deposito) || "Depósito");
+    set("ipbNumeroBoleta", id);
+    set("ipbObservaciones", "Traspaso " + id + " desde el depósito" + (t.observaciones ? " · " + t.observaciones : ""));
+    if (typeof _hoyISO === "function") set("ipbFecha", _hoyISO());
+    if (typeof renderCarritoBoleta === "function") renderCarritoBoleta();
+    depPintarAvisoTraspasoIngreso();
+    const sinCosto = ipCarritoBoleta.filter(i => !(i.precio > 0)).length;
+    toast(`${id}: revisá costo y precio de venta de cada renglón (✏️) y tocá “Guardar boleta”` + (sinCosto ? `. ${sinCosto} renglón(es) sin costo` : ""), sinCosto ? "error" : "success");
+  };
+  if (faltan.length) confirmarAccion(`${faltan.length} producto(s) no tienen producto del local elegido: se van a crear como productos nuevos con el código del depósito. ¿Seguir?`, seguir, "Productos nuevos");
+  else seguir();
+}
+
+function depPintarAvisoTraspasoIngreso() {
+  const sec = document.getElementById("ingresoProductos");
+  let el = document.getElementById("depAvisoTraspasoIngreso");
+  if (!depTraspasoEnIngreso) { if (el) el.remove(); return; }
+  if (!sec) return;
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "depAvisoTraspasoIngreso";
+    el.className = "card p-3 mb-3";
+    el.style.cssText = "border-left:4px solid #0f766e;background:#f0fdfa;";
+    const cab = sec.querySelector(".page-header");
+    if (cab) cab.after(el); else sec.prepend(el);
+  }
+  el.innerHTML = `<div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+    <div><b>🚚 Recibiendo el traspaso ${depEsc(depTraspasoEnIngreso.id)} del depósito.</b>
+      <div style="font-size:13px;">Revisá el costo, el precio de venta y la categoría de cada renglón con ✏️. Al tocar <b>Guardar boleta</b> el depósito lo da por recibido y se suma el stock. No genera deuda.</div></div>
+    <button class="btn btn-outline-secondary btn-sm" onclick="depCancelarTraspasoIngreso()">Cancelar (no recibir todavía)</button></div>`;
+}
+
+function depCancelarTraspasoIngreso() {
+  confirmarAccion("¿Dejar de recibir este traspaso ahora? Sigue en camino y lo podés recibir después.", () => {
+    depTraspasoEnIngreso = null;
+    if (typeof _limpiarBoletaIngreso === "function") _limpiarBoletaIngreso();
+    depPintarAvisoTraspasoIngreso();
+  }, "Cancelar recepción");
+}
+
+/** "Guardar boleta" con un traspaso cargado: confirma en el depósito y guarda la boleta en un solo pedido al backend */
+async function depGuardarBoletaTraspaso() {
+  const tr = depTraspasoEnIngreso;
+  if (!ipCarritoBoleta.length) { toast("La boleta no tiene productos", "error"); return; }
+  if (typeof _ipItemEditando !== "undefined" && _ipItemEditando) { toast("Terminá de corregir el renglón abierto (Agregar a la boleta) o cancelalo", "error"); return; }
+  const sinCosto = ipCarritoBoleta.filter(i => !(Number(i.precio) > 0));
+  if (sinCosto.length) { toast(`Falta el costo de: ${sinCosto.map(i => i.producto).join(", ")}`, "error"); return; }
+  const val = (id) => String((document.getElementById(id) || {}).value || "").trim();
+  const payload = _payloadBoletaIngreso({ proveedor: val("ipbProveedor") || "Depósito", proveedorContacto: val("ipbProveedorContacto"),
+    numeroBoleta: tr.id, observaciones: val("ipbObservaciones"), fecha: val("ipbFecha") || _hoyISO(), origen: "DEPOSITO", sinDeuda: true });
+  // lo que llegó = lo que quedó en la boleta (por si se corrigieron cantidades o códigos en el ingreso)
+  const porCodigoLocal = {};
+  ipCarritoBoleta.forEach(i => { porCodigoLocal[String(i.codigo)] = (porCodigoLocal[String(i.codigo)] || 0) + Number(i.cantidad); });
+  const recibidos = tr.recibidos.map(r => {
+    const cl = String(r.codigoLocal || "").trim() || r.codigo;
+    const cant = Object.prototype.hasOwnProperty.call(porCodigoLocal, cl) ? porCodigoLocal[cl] : 0;
+    delete porCodigoLocal[cl];
+    return { codigo: r.codigo, codigoLocal: cl, cantidad: cant };
+  });
+  const btn = document.getElementById("btnGuardarBoleta");
+  const txt = btn ? btn.innerHTML : "";
+  if (btn) { btn.disabled = true; btn.innerHTML = "Recibiendo..."; }
+  try {
+    const r = await depPost("recibirTraspaso", { traspasoId: tr.id, recibidos, ingreso: payload, usuarioNombre: sessionStorage.getItem("nombreUsuario") || "" }, { timeoutMs: 60000 });
+    if (!r.success) {
+      toast(r.message || "No se pudo recibir el traspaso", "error");
+      if (r.yaProcesado && !r.traspaso) { depTraspasoEnIngreso = null; depPintarAvisoTraspasoIngreso(); }
+      return;
+    }
+    toast(`${tr.id} recibido: stock y precios actualizados` + (r.traspaso && r.traspaso.estado === "RECIBIDO_CON_DIFERENCIAS" ? " (con diferencias, anotadas en el depósito)" : ""), "success");
+    depTraspasoEnIngreso = null;
+    depPintarAvisoTraspasoIngreso();
+    try { localStorage.removeItem("vpos_cache_productosAdmin"); } catch (e) {}
+    _limpiarBoletaIngreso();
+    if (typeof cargarProductos === "function") await cargarProductos();
+    if (typeof cargarHistorialIngresos === "function") await cargarHistorialIngresos();
+    if (typeof window.refrescarCatalogoPOS === "function") window.refrescarCatalogoPOS();
+  } catch (e) {
+    toast("Sin conexión: " + e.message + ". Probá de nuevo: nunca se suma dos veces.", "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = txt; }
+  }
+}
+
+window.addEventListener("load", () => depCuandoPanelListo(() => {
+  const orig = window.guardarBoletaCompleta;
+  if (typeof orig !== "function" || orig._tras) return;
+  const envuelta = function () {
+    if (depTraspasoEnIngreso && String((document.getElementById("ipbNumeroBoleta") || {}).value || "").trim() === depTraspasoEnIngreso.id) return depGuardarBoletaTraspaso();
+    return orig.apply(this, arguments);
+  };
+  envuelta._tras = true;
+  window.guardarBoletaCompleta = envuelta;
 }));

@@ -601,7 +601,7 @@ function conCachePolling(clave, ttlSegundos, fnImpl){
 // SEO usan SIN iniciar sesión. Todo lo demás requiere token.
 // Versión del backend: aparece en las respuestas de pedidos y en
 // ?action=prepararPedido, para saber qué código está publicado.
-const VERSION_BACKEND = "2.4.1";
+const VERSION_BACKEND = "2.4.2";
 
 const ACCIONES_PUBLICAS = {
   productos: true, categorias: true, destacados: true, ofertas: true,
@@ -13536,7 +13536,16 @@ function crearTraspaso(data){
     if(sinStock.length && String(data.permitirSinStock) !== "true" && data.permitirSinStock !== true){
       return jsonResponse({ success:false, sinStock: true, message:"No alcanza el stock: " + sinStock.join("; ") });
     }
-    lista.forEach(it => { it.producto = String(mapa[it.codigo][iP] || it.producto); if(iCat !== -1) it.categoria = String(mapa[it.codigo][iCat] || ""); });
+    // Precio del depósito (en pesos y, si tiene, en dólares): el local lo usa como costo al ingresarlo
+    const iPr = h.indexOf("PRECIO"), iPu = h.indexOf("PRECIO_USD");
+    const dolarDep = (function(){ try{ return leerDolarDeposito().valor; }catch(e){ return 0; } })();
+    lista.forEach(it => {
+      it.producto = String(mapa[it.codigo][iP] || it.producto);
+      if(iCat !== -1) it.categoria = String(mapa[it.codigo][iCat] || "");
+      if(iPr !== -1) it.precio = Number(mapa[it.codigo][iPr]) || 0;
+      const usd = iPu !== -1 ? Number(mapa[it.codigo][iPu]) || 0 : 0;
+      if(usd > 0){ it.precioUsd = usd; if(dolarDep > 0) it.dolar = dolarDep; }
+    });
     // Código del mismo producto en el local: el que se escribió ahora (y se recuerda) o el guardado en el producto
     const iCL = h.indexOf("CODIGO_LOCAL");
     const nuevosCodigos = [];
@@ -13751,7 +13760,13 @@ function recibirTraspaso(data){
   try{
     // ¿ya lo sumamos acá? (por si se cortó la conexión después de confirmar)
     let hojaRec = getHoja(HOJA_TRASPASOS_RECIBIDOS);
-    if(hojaRec && _buscarFilaTraspaso(hojaRec, data.traspasoId) > 0) return jsonResponse({ success:false, yaProcesado: true, message:"Este traspaso ya se recibió en el local." });
+    if(hojaRec && _buscarFilaTraspaso(hojaRec, data.traspasoId) > 0){
+      // Con revisión de precios: si la confirmación llegó pero el ingreso no (se cortó), se completa el ingreso (es idempotente)
+      if(data.ingreso){ lock.releaseLock(); return _ingresoDeTraspaso(data); }
+      return jsonResponse({ success:false, yaProcesado: true, message:"Este traspaso ya se recibió en el local." });
+    }
+    // revisar precios = ingreso de mercadería: el vendedor no puede
+    if(data.ingreso && String(data.rol || "").toLowerCase() === "vendedor") return jsonResponse({ success:false, message:"Tu usuario (Vendedor) no puede registrar ingresos: recibí el traspaso sin revisar precios o pedíselo a un administrador." });
 
     const usuario = _usuarioActual(data);
     const r = _llamarDeposito({ action: "confirmarRecepcionTraspaso", traspasoId: data.traspasoId, recibidos: recibidos, recibio: usuario });
@@ -13762,6 +13777,20 @@ function recibirTraspaso(data){
       t = ((lista && lista.recibidos) || []).filter(x => x.traspasoId === String(data.traspasoId))[0] || null;
     }
     if(!t) return jsonResponse(r);
+
+    // Revisando precios: el stock, los precios y la boleta los hace el ingreso de mercadería (como cualquier boleta)
+    if(data.ingreso){
+      if(!hojaRec){
+        hojaRec = getSS().insertSheet(HOJA_TRASPASOS_RECIBIDOS);
+        hojaRec.appendRow(["TRASPASO_ID", "FECHA_ENVIO", "FECHA_RECEPCION", "ESTADO", "ITEMS", "DIFERENCIAS", "UNIDADES_RECIBIDAS", "RECIBIO", "NO_EXISTEN_EN_LOCAL"]);
+      }
+      hojaRec.appendRow([t.traspasoId, t.fecha, new Date(), t.estado, JSON.stringify(t.items), JSON.stringify(t.diferencias || []), t.unidadesRecibidas, usuario, "(ingreso de mercadería)"]);
+      lock.releaseLock();
+      const salida = JSON.parse(_ingresoDeTraspaso(data).getContent());
+      salida.traspaso = t;
+      if(!salida.success) salida.message = "El depósito ya lo tiene como recibido, pero el ingreso no se guardó: " + (salida.message || "") + ". Tocá Guardar de nuevo.";
+      return jsonResponse(salida);
+    }
 
     // stock: lo que realmente llegó, solo de productos que existen en el local
     const prod = getSheet();
@@ -13857,4 +13886,17 @@ function guardarCodigosLocal(data){
   } finally {
     lock.releaseLock();
   }
+}
+
+
+/** La boleta de ingreso (origen DEPÓSITO, sin deuda) de un traspaso recibido revisando precios */
+function _ingresoDeTraspaso(data){
+  let ing = data.ingreso;
+  if(typeof ing === "string"){ try{ ing = JSON.parse(ing); }catch(e){ ing = {}; } }
+  const payload = Object.assign({}, ing, {
+    rol: data.rol, origen: "DEPOSITO", sinDeuda: true,
+    numeroBoleta: String(data.traspasoId), usuario: ing.usuario || _usuarioActual(data)
+  });
+  const clave = String(ing.idOperacionSync || ("ING-" + data.traspasoId));
+  return conIdempotencia(clave, function(){ return registrarIngresoProducto(payload); });
 }
