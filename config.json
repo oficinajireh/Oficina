@@ -1,0 +1,8 @@
+{
+  "_LEEME": "Sitio SOLO del panel del depósito (sin catálogo público). Pegá en apiUrl la dirección /exec del backend del DEPÓSITO. Lo demás se configura desde el panel.",
+
+  "empresa": "Jireh Depósito",
+  "nombreCorto": "Depósito",
+  "apiUrl": "PEGAR_ACA_LA_URL_EXEC_DEL_BACKEND_DEL_DEPOSITO",
+  "colorTema": "#241536"
+}

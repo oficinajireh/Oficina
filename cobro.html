@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Pantalla de cobro</title>
+<!--
+  Pantalla de cobro con QR de Mercado Pago para el celular o la tablet que
+  mira el cliente. Muestra el QR que genera la caja (VeekPOS de escritorio),
+  el monto, y "¡Pago recibido!" cuando entra el pago.
+
+  - La dirección del backend sale de config.json (apiUrl), igual que el resto del sitio.
+  - Se puede instalar ("Agregar a pantalla de inicio"): abre a pantalla completa
+    y, sin internet, igual abre y muestra "Sin conexión" hasta que vuelva.
+  - Mantiene la pantalla encendida, suena y vibra al recibir el pago.
+  - Consulta seguido solo mientras hay un cobro; esperando, más espaciado; con
+    la pantalla bloqueada, no consulta. Y el QR se descarga una sola vez por
+    cobro (el backend responde "sinCambios" si no cambió).
+-->
+<link rel="manifest" href="manifest-cobro.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cobro QR">
+<link rel="apple-touch-icon" href="icon-512.png">
+<meta name="theme-color" content="#0b1220">
+<style>
+  :root{
+    --fondo1:#0b1220; --fondo2:#1e293b;
+    --texto:#f8fafc; --suave:#94a3b8;
+    --verde:#16a34a; --verde-claro:#4ade80;
+    --azul-mp:#009ee3;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; margin:0; }
+  body{
+    position:fixed; inset:0; overflow:hidden;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:linear-gradient(160deg,var(--fondo1) 0%,var(--fondo2) 100%);
+    color:var(--texto);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+    user-select:none; -webkit-user-select:none;
+  }
+  #cabecera{
+    position:absolute; top:calc(env(safe-area-inset-top) + 12px); left:16px; right:16px;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    font-size:14px; color:var(--suave);
+  }
+  #negocio{ display:flex; align-items:center; gap:8px; min-width:0; }
+  #negocio img{ width:28px; height:28px; border-radius:7px; flex-shrink:0; }
+  #negocio span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; color:var(--texto); }
+  #estadoRed{ display:flex; align-items:center; gap:6px; font-size:12px; white-space:nowrap; }
+  #estadoRed i{ width:8px; height:8px; border-radius:50%; background:var(--verde-claro); display:inline-block; }
+  #estadoRed.sin i{ background:#f87171; }
+
+  #tarjeta{ text-align:center; width:min(92vw, 460px); }
+  #tarjeta.cobro .marco{
+    background:#fff; border-radius:24px; padding:18px; margin:0 auto;
+    width:min(82vw, 62vh, 400px); aspect-ratio:1/1;
+    box-shadow:0 18px 50px rgba(0,0,0,.45);
+  }
+  #tarjeta.cobro .marco img{ width:100%; height:100%; object-fit:contain; display:block; image-rendering:pixelated; }
+  .monto{ font-size:clamp(40px, 11vw, 64px); font-weight:800; letter-spacing:-1px; margin-top:20px; font-variant-numeric:tabular-nums; }
+  .sub{ font-size:clamp(16px, 4.4vw, 20px); color:var(--suave); margin-top:6px; }
+  .sub b{ color:var(--azul-mp); }
+  .pulso{ animation:pulso 1.8s ease-in-out infinite; }
+  @keyframes pulso{ 50%{ opacity:.45; } }
+  .icono{ font-size:clamp(72px, 22vw, 110px); line-height:1; }
+  h1{ font-size:clamp(24px, 7vw, 34px); margin:18px 0 0; font-weight:700; }
+  #tarjeta.pagada .icono{ animation:entra .5s cubic-bezier(.2,1.4,.4,1); }
+  #tarjeta.pagada h1{ color:var(--verde-claro); }
+  @keyframes entra{ from{ transform:scale(.3); opacity:0; } }
+  #tarjeta.idle{ opacity:.85; }
+
+  #empezar{
+    position:fixed; inset:0; z-index:5; border:0; width:100%;
+    background:rgba(11,18,32,.94); color:var(--texto);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    font:inherit; cursor:pointer; padding:24px;
+  }
+  #empezar .grande{ font-size:22px; font-weight:700; }
+  #empezar .chico{ font-size:15px; color:var(--suave); max-width:340px; line-height:1.45; }
+  #empezar .boton{ margin-top:8px; background:var(--azul-mp); color:#fff; border-radius:999px; padding:14px 28px; font-size:18px; font-weight:700; }
+  #error{ display:none; max-width:420px; text-align:center; line-height:1.5; color:#fecaca; }
+</style>
+</head>
+<body>
+  <div id="cabecera">
+    <div id="negocio"><img src="icon-512.png" alt=""><span id="nombreNegocio">Pantalla de cobro</span></div>
+    <div id="estadoRed" title="Conexión con la caja"><i></i><span>Conectado</span></div>
+  </div>
+
+  <div id="tarjeta" class="idle"></div>
+  <div id="error"></div>
+
+  <button id="empezar" type="button">
+    <div class="icono">📱</div>
+    <div class="grande">Pantalla de cobro</div>
+    <div class="chico">Dejá este teléfono a la vista del cliente. Cuando la caja genere un cobro con QR de Mercado Pago, aparece acá.</div>
+    <div class="boton">Tocá para empezar</div>
+  </button>
+
+<script src="admin/vendor/qrcode.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  const INTERVALO_COBRO_MS = 2500;   // hay un QR en pantalla esperando el pago
+  const INTERVALO_ESPERA_MS = 7000;  // no hay cobro: se consulta más espaciado
+  const INTERVALO_ERROR_MS = 10000;  // sin conexión: se reintenta cada 10 s
+
+  const tarjeta = document.getElementById("tarjeta");
+  const estadoRed = document.getElementById("estadoRed");
+  const cajaError = document.getElementById("error");
+  let apiUrl = "";
+  let versionMostrada = "";   // ts del cobro que ya está en pantalla
+  let ultimo = { activo: false };
+  let reloj = null;
+  let wakeLock = null;
+  let audio = null;
+
+  const plata = (n) => { const v = Number(n || 0); const d = Number.isInteger(v) ? 0 : 2; return "$" + v.toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d }); };
+
+  function guardar(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function leer(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+  /* ---------- configuración: config.json (con copia para abrir sin internet) ---------- */
+  async function cargarConfig() {
+    let cfg = null;
+    try {
+      const r = await fetch("config.json", { cache: "no-store" });
+      if (r.ok) { cfg = await r.json(); guardar("cobro_config", JSON.stringify(cfg)); }
+    } catch (e) {}
+    if (!cfg) { try { cfg = JSON.parse(leer("cobro_config") || "null"); } catch (e) {} }
+    if (!cfg || !cfg.apiUrl) return false;
+    apiUrl = String(cfg.apiUrl).trim();
+    const nombre = cfg.nombreCorto || cfg.empresa;
+    if (nombre) { document.getElementById("nombreNegocio").textContent = nombre; document.title = "Cobro · " + nombre; }
+    return true;
+  }
+
+  /* ---------- pantalla ---------- */
+  function render(estado) {
+    if (estado.activo && estado.pagada) {
+      tarjeta.className = "pagada";
+      tarjeta.innerHTML = '<div class="icono">✅</div><h1>¡Pago recibido!</h1><div class="monto">' + plata(estado.monto) + '</div><div class="sub">Gracias por tu compra</div>';
+    } else if (estado.activo && (estado.qrTexto || estado.qrImagenDataUrl)) {
+      tarjeta.className = "cobro";
+      tarjeta.innerHTML =
+        '<div class="marco"></div>' +
+        '<div class="monto">' + plata(estado.monto) + '</div>' +
+        '<div class="sub pulso">Escaneá con <b>Mercado Pago</b> para pagar</div>';
+      const marco = tarjeta.querySelector(".marco");
+      let dibujado = false;
+      // Con el texto del QR se dibuja acá, nítido al tamaño de la pantalla
+      if (estado.qrTexto && window.QRCode) {
+        try {
+          const tmp = document.createElement("div");
+          new QRCode(tmp, { text: estado.qrTexto, width: 600, height: 600, correctLevel: QRCode.CorrectLevel.M });
+          const cv = tmp.querySelector("canvas");
+          if (cv) {
+            const img = document.createElement("img"); img.alt = "QR de cobro"; img.src = cv.toDataURL("image/png");
+            marco.appendChild(img); dibujado = true;
+          }
+        } catch (e) {}
+      }
+      if (!dibujado && estado.qrImagenDataUrl) {
+        const img = document.createElement("img"); img.alt = "QR de cobro"; img.src = estado.qrImagenDataUrl; marco.appendChild(img);
+      }
+    } else {
+      tarjeta.className = "idle";
+      tarjeta.innerHTML = '<div class="icono">🛒</div><h1>Esperando la próxima venta…</h1>';
+    }
+  }
+
+  function marcarRed(ok) {
+    estadoRed.classList.toggle("sin", !ok);
+    estadoRed.querySelector("span").textContent = ok ? "Conectado" : "Sin conexión";
+  }
+
+  /* ---------- aviso de pago: sonido + vibración ---------- */
+  function prepararAudio() {
+    try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === "suspended") audio.resume(); } catch (e) {}
+  }
+  function sonarPago() {
+    try { if (navigator.vibrate) navigator.vibrate([180, 90, 180]); } catch (e) {}
+    if (!audio) return;
+    try {
+      const t = audio.currentTime;
+      [[880, 0], [1320, 0.16]].forEach(([f, d]) => {
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.type = "sine"; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t + d);
+        g.gain.exponentialRampToValueAtTime(0.35, t + d + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.28);
+        o.connect(g); g.connect(audio.destination); o.start(t + d); o.stop(t + d + 0.3);
+      });
+    } catch (e) {}
+  }
+
+  /* ---------- pantalla siempre encendida ---------- */
+  async function pedirPantallaEncendida() {
+    try {
+      if ("wakeLock" in navigator && document.visibilityState === "visible" && !wakeLock) {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      }
+    } catch (e) { /* el navegador no lo permite: se sigue igual */ }
+  }
+
+  /* ---------- consultas al backend ---------- */
+  function programar(ms) {
+    clearTimeout(reloj);
+    if (document.visibilityState !== "visible") return; // con la pantalla bloqueada no se consulta
+    reloj = setTimeout(consultar, ms);
+  }
+
+  async function consultar() {
+    let siguiente = INTERVALO_ESPERA_MS;
+    try {
+      const url = apiUrl + (apiUrl.includes("?") ? "&" : "?") + "action=qrEstado" + (versionMostrada ? "&v=" + encodeURIComponent(versionMostrada) : "");
+      const r = await fetch(url, { cache: "no-store" });
+      const data = await r.json();
+      marcarRed(true);
+      if (data.sinCambios) {
+        siguiente = INTERVALO_COBRO_MS;
+      } else {
+        const estabaPagada = !!(ultimo.activo && ultimo.pagada);
+        if (data.activo && data.pagada && !estabaPagada) sonarPago();
+        ultimo = data;
+        versionMostrada = data.activo && data.ts ? String(data.ts) : "";
+        render(data);
+        siguiente = data.activo ? INTERVALO_COBRO_MS : INTERVALO_ESPERA_MS;
+      }
+    } catch (e) {
+      marcarRed(false);
+      siguiente = INTERVALO_ERROR_MS;
+    }
+    programar(siguiente);
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      pedirPantallaEncendida();
+      versionMostrada = ""; // al volver se pide el estado completo
+      consultar();
+    } else {
+      clearTimeout(reloj);
+    }
+  });
+  window.addEventListener("online", () => { if (document.visibilityState === "visible") consultar(); });
+
+  /* ---------- inicio ---------- */
+  document.getElementById("empezar").addEventListener("click", () => {
+    prepararAudio();
+    pedirPantallaEncendida();
+    try { const el = document.documentElement; if (el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(() => {}); } catch (e) {}
+    document.getElementById("empezar").remove();
+  });
+
+  (async () => {
+    render({ activo: false });
+    const ok = await cargarConfig();
+    if (!ok) {
+      tarjeta.style.display = "none";
+      cajaError.style.display = "block";
+      cajaError.textContent = "No se encontró la dirección del sistema (apiUrl en config.json). Abrí esta página con internet al menos una vez.";
+      marcarRed(false);
+      return;
+    }
+    consultar();
+  })();
+
+  if ("serviceWorker" in navigator) {
+    // Alcance solo de esta página, para no pisar el service worker de lector.html
+    navigator.serviceWorker.register("sw-cobro.js", { scope: "./cobro.html" }).catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "Pantalla de cobro",
+  "short_name": "Cobro QR",
+  "description": "Muestra al cliente el QR de Mercado Pago que genera la caja y avisa cuando entra el pago.",
+  "id": "cobro.html",
+  "start_url": "cobro.html",
+  "scope": "cobro.html",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

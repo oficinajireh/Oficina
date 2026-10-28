@@ -1,0 +1,421 @@
+/* =====================================================================
+   ESTILOS DEL PANEL (se eligen en Configuración → General → "Estilo del
+   panel en esta computadora"; se guarda en el navegador / app de cada
+   caja, no en la planilla).
+
+   Cómo funciona:
+   - <html data-estilo="..."> elige el estilo (lo pone el script del
+     <head> de index.html antes de pintar, para que no "parpadee").
+   - Los estilos oscuros agregan además data-oscuro (ver capa-oscura.css,
+     generada automáticamente a partir de admin.css) y data-bs-theme=dark
+     (Bootstrap pinta solo sus formularios, tablas y ventanas).
+   - El COLOR del negocio (Configuración → Catálogo → Color del sitio)
+   se sigue respetando: los estilos usan --navy-* y --blue-500, que son
+     las variables que cambia ese selector. Excepciones a propósito:
+     Alto contraste y Celeste y blanco tienen colores fijos.
+   - Todo va dentro de @media screen: tickets y etiquetas impresas no
+     cambian nunca.
+   - Las distribuciones especiales del Punto de venta (lista, ticket al
+     centro, ticket abajo...) solo se aplican en pantallas anchas
+     (> 1100 px); en celular/tablet el panel se ve como siempre.
+===================================================================== */
+
+@media screen{
+
+/* ---------- Base común a todos los estilos (no aplica a "clásico") ---------- */
+html:where([data-estilo]:not([data-estilo="clasico"])) body{
+  background:var(--e-fondo);
+  color:var(--e-texto);
+  font-family:var(--e-font);
+}
+html:where([data-estilo]:not([data-estilo="clasico"])) .content{ background:transparent; }
+html:where([data-estilo]:not([data-estilo="clasico"])) .page-header h1{ font-family:var(--e-font-titulo, var(--e-font)); color:var(--e-texto); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .page-header .sub{ color:var(--e-suave); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .card,
+html:where([data-estilo]:not([data-estilo="clasico"])) .pos-scanbar,
+html:where([data-estilo]:not([data-estilo="clasico"])) .scan-result-panel,
+html:where([data-estilo]:not([data-estilo="clasico"])) .ticket-panel,
+html:where([data-estilo]:not([data-estilo="clasico"])) .product-tile{
+  background:var(--e-sup);
+  border-color:var(--e-linea);
+  border-radius:var(--e-radio);
+}
+html:where([data-estilo]:not([data-estilo="clasico"])) .product-tile .tile-photo{ background:var(--e-sup-2); border-radius:calc(var(--e-radio) - 4px); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .product-tile .tile-name{ color:var(--e-texto); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .product-tile .tile-price{ color:var(--e-precio, var(--e-texto)); font-family:var(--e-font-num, var(--font-mono)); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .ticket-footer{ background:var(--e-sup-2); border-color:var(--e-linea); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .ticket-totals .trow.grand{ background:var(--e-sup); border-color:var(--e-linea); color:var(--e-texto); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .ticket-totals .trow.grand .money,
+html:where([data-estilo]:not([data-estilo="clasico"])) .ticket-row .ti-sub{ font-family:var(--e-font-num, var(--font-mono)); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .ticket-row .ti-name{ color:var(--e-texto); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .pos-btn-finalize{ background:var(--e-acento); color:var(--e-acento-texto); box-shadow:none; }
+html:where([data-estilo]:not([data-estilo="clasico"])) .btn-primary{ background:var(--e-acento); color:var(--e-acento-texto); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .cat-chip{ background:var(--e-sup); border-color:var(--e-linea); color:var(--e-suave); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .cat-chip.active,
+html:where([data-estilo]:not([data-estilo="clasico"])) .pos-categories .active{ background:var(--e-acento) !important; border-color:transparent !important; color:var(--e-acento-texto) !important; }
+
+/* Barra lateral */
+html:where([data-estilo]:not([data-estilo="clasico"])) .sidebar{
+  background:var(--e-lateral);
+  background-image:none;
+  color:var(--e-lateral-texto);
+  box-shadow:none;
+  border-right:1px solid var(--e-lateral-borde, transparent);
+}
+html:where([data-estilo]:not([data-estilo="clasico"])) .sidebar a{ color:var(--e-lateral-suave); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .sidebar a.active,
+html:where([data-estilo]:not([data-estilo="clasico"])) .sidebar a:hover{ background:var(--e-lateral-activo); color:var(--e-lateral-activo-texto); }
+
+html:where([data-estilo]:not([data-estilo="clasico"])) .sidebar-brand{ border-bottom-color:var(--e-lateral-borde, rgba(255,255,255,.1)); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .sidebar-brand .label small{ color:var(--e-lateral-suave); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .sidebar .sync-estado-btn{ color:var(--e-lateral-suave); border-color:var(--e-lateral-borde, rgba(255,255,255,.12)); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .sidebar .sync-estado-btn:hover{ background:var(--e-lateral-activo); color:var(--e-lateral-activo-texto); }
+html:where([data-estilo]:not([data-estilo="clasico"])) .product-tile .tile-photo{ aspect-ratio:4/3; }
+
+/* Foco de teclado bien visible en todos los estilos */
+html:where([data-estilo]:not([data-estilo="clasico"])) .product-tile.kbd-focus{ outline:3px solid var(--e-foco, var(--e-acento)); outline-offset:1px; }
+
+/* =====================================================================
+   A · MOSTRADOR CLARO — claro, amplio, botones grandes
+===================================================================== */
+html[data-estilo="mostrador"]{
+  --e-fondo: color-mix(in srgb, var(--navy-600) 7%, #F3F5F4);
+  --e-sup:#FFFFFF; --e-sup-2: color-mix(in srgb, var(--navy-600) 5%, #F6F8F7);
+  --e-linea: color-mix(in srgb, var(--navy-600) 12%, #DDE3DF);
+  --e-texto:#17221B; --e-suave:#5E6B63;
+  --e-acento: var(--navy-700); --e-acento-texto:#fff;
+  --e-acento-cl: color-mix(in srgb, var(--navy-600) 12%, #fff);
+  --e-font:'Figtree', system-ui, sans-serif; --e-font-num:'Figtree', system-ui, sans-serif;
+  --e-radio:16px;
+  --e-lateral:#FFFFFF; --e-lateral-texto:var(--e-texto); --e-lateral-suave:var(--e-suave);
+  --e-lateral-activo:var(--e-acento-cl); --e-lateral-activo-texto:var(--e-acento); --e-lateral-borde:var(--e-linea);
+  --e-precio:var(--e-texto);
+}
+html[data-estilo="mostrador"] .sidebar .sidebar-brand,
+html[data-estilo="mostrador"] .sidebar *{ text-shadow:none; }
+html[data-estilo="mostrador"] .pos-scanbar{ border:2px solid var(--e-acento); box-shadow:0 0 0 5px var(--e-acento-cl); padding:16px 18px; }
+html[data-estilo="mostrador"] #posBusqueda{ font-size:18px; }
+html[data-estilo="mostrador"] .pos-scanbar .scan-icon{ background:var(--e-acento); }
+html[data-estilo="mostrador"] .product-tile{ padding:12px; gap:10px; }
+html[data-estilo="mostrador"] .product-tile .tile-name{ font-size:14px; }
+html[data-estilo="mostrador"] .product-tile .tile-price{ font-size:17px; font-weight:800; }
+html[data-estilo="mostrador"] .ticket-totals .trow.grand{ font-size:30px; border:none; background:transparent; padding:6px 0; }
+html[data-estilo="mostrador"] .pos-btn-finalize{ font-size:16px; padding:14px 10px; border-radius:14px; }
+@media (min-width:1101px){
+  html[data-estilo="mostrador"] .pos-product-grid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+}
+
+/* =====================================================================
+   B · TURNO LARGO — oscuro, total estilo visor de caja registradora
+===================================================================== */
+html[data-estilo="turno"]{
+  --e-fondo:#17232B; --e-sup:#1F2E38; --e-sup-2:#263845; --e-linea:#2F4350;
+  --e-texto:#E7EEF1; --e-suave:#93A6B1;
+  --e-acento: color-mix(in srgb, var(--blue-500) 55%, #8FE3CF);
+  --e-acento-texto:#0E171C;
+  --e-visor:#0E171C;
+  --e-font:'Inter', system-ui, sans-serif; --e-font-num:'Bricolage Grotesque', 'Inter', sans-serif; --e-font-titulo:'Bricolage Grotesque','Inter',sans-serif;
+  --e-radio:12px;
+  --e-lateral:#17232B; --e-lateral-texto:var(--e-texto); --e-lateral-suave:var(--e-suave);
+  --e-lateral-activo:#263845; --e-lateral-activo-texto:#fff; --e-lateral-borde:#2F4350;
+  --e-precio:#E7EEF1;
+}
+html[data-estilo="turno"] .ticket-totals .trow.grand{
+  background:var(--e-visor) !important; border:1px solid #213039;
+  color:var(--e-acento) !important; font-size:34px; padding:14px 16px;
+  box-shadow:inset 0 2px 12px rgba(0,0,0,.45);
+  text-shadow:0 0 16px color-mix(in srgb, var(--e-acento) 45%, transparent);
+}
+html[data-estilo="turno"] .ticket-totals .trow.grand > span:first-child{ font-size:13px; color:#6F9A90; align-self:flex-start; font-family:'Inter',sans-serif; }
+@media (min-width:1101px){
+  /* El total va arriba del ticket, como el visor de una caja */
+  html[data-estilo="turno"] .ticket-footer{ display:contents; }
+  html[data-estilo="turno"] .ticket-header{ order:0; }
+  html[data-estilo="turno"] .ticket-totals{ order:1; padding:12px 14px 0; margin:0; }
+  html[data-estilo="turno"] .ticket-items{ order:2; }
+  html[data-estilo="turno"] .pos-action-bar{ order:3; padding:10px 14px 12px; margin:0; background:var(--e-sup-2); border-top:1px solid var(--e-linea); }
+  html[data-estilo="turno"] .pos-product-grid{ grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); }
+  html[data-estilo="turno"] .product-tile{ display:grid; grid-template-columns:60px 1fr; grid-template-rows:auto auto; column-gap:12px; align-items:center; }
+  html[data-estilo="turno"] .product-tile .tile-photo{ grid-row:span 2; width:60px; height:60px; aspect-ratio:auto; }
+  html[data-estilo="turno"] .product-tile .tile-right{ grid-column:2; }
+  html[data-estilo="turno"] .product-tile .tile-add{ display:none; }
+}
+
+/* =====================================================================
+   C · ESCÁNER Y RECIBO — catálogo en lista, ticket como recibo impreso
+===================================================================== */
+html[data-estilo="recibo"]{
+  --e-fondo:#ECEAF0; --e-sup:#FFFFFF; --e-sup-2:#F6F4F9; --e-linea:#DDD9E4;
+  --e-texto:#1D1726; --e-suave:#6B6478;
+  --e-acento: var(--blue-500); --e-acento-texto:#fff;
+  --e-font:'IBM Plex Sans', system-ui, sans-serif; --e-font-num:'IBM Plex Sans', sans-serif;
+  --e-radio:12px;
+  --e-lateral: var(--navy-900); --e-lateral-texto:#fff; --e-lateral-suave:rgba(255,255,255,.7);
+  --e-lateral-activo: var(--navy-700); --e-lateral-activo-texto:#fff;
+  --e-papel:#FFFEFB;
+}
+html[data-estilo="recibo"] .sidebar a.active{ box-shadow:inset 3px 0 0 var(--blue-500); }
+/* Recibo */
+html[data-estilo="recibo"] .ticket-panel{
+  background:var(--e-papel); border:none; border-radius:4px 4px 0 0; overflow:visible;
+  box-shadow:0 1px 2px rgba(29,23,38,.08), 0 8px 24px rgba(29,23,38,.08);
+  font-family:'IBM Plex Mono', monospace; position:relative;
+}
+html[data-estilo="recibo"] .ticket-panel::after{
+  content:""; position:absolute; left:0; right:0; bottom:-10px; height:10px;
+  background:linear-gradient(-45deg, transparent 7px, var(--e-papel) 0) 0 0/14px 10px, linear-gradient(45deg, transparent 7px, var(--e-papel) 0) 0 0/14px 10px;
+}
+html[data-estilo="recibo"] .ticket-header{ border-bottom:1.5px dashed #CFC8D9; justify-content:center; }
+html[data-estilo="recibo"] .ticket-header::before, html[data-estilo="recibo"] .ticket-header::after{ display:none; }
+html[data-estilo="recibo"] .ticket-row .ti-name, html[data-estilo="recibo"] .ticket-row .ti-sub{ font-family:'IBM Plex Mono', monospace; }
+html[data-estilo="recibo"] .ticket-footer{ background:var(--e-papel); border-top:1.5px dashed #CFC8D9; border-radius:0 0 4px 4px; }
+html[data-estilo="recibo"] .ticket-totals .trow.grand{ background:transparent; border:none; font-family:'IBM Plex Mono', monospace; font-size:28px; padding:6px 0; }
+html[data-estilo="recibo"] .ticket-totals .trow.grand .money{ font-family:'IBM Plex Mono', monospace; }
+@media (min-width:1101px){
+  /* Catálogo en lista: una fila por producto (código, stock y precio en columnas) */
+  html[data-estilo="recibo"] .pos-product-grid{ grid-template-columns:1fr; gap:0; background:var(--e-sup); border:1px solid var(--e-linea); border-radius:12px; overflow:hidden; }
+  html[data-estilo="recibo"] .product-tile{
+    flex-direction:row; align-items:center; gap:14px; border:none; border-bottom:1px solid #EFEDF3;
+    border-radius:0; padding:8px 14px; min-height:56px;
+  }
+  html[data-estilo="recibo"] .product-tile:hover{ transform:none; box-shadow:none; background:var(--e-sup-2); }
+  html[data-estilo="recibo"] .product-tile .tile-photo{ width:38px; height:38px; aspect-ratio:auto; font-size:18px; border-radius:8px; }
+  html[data-estilo="recibo"] .product-tile .tile-info{ display:grid; grid-template-columns:auto 1fr; grid-template-areas:"nombre nombre" "codigo cat"; column-gap:10px; row-gap:1px; }
+  html[data-estilo="recibo"] .product-tile .tile-name{ grid-area:nombre; min-height:0; -webkit-line-clamp:1; font-size:14px; }
+  html[data-estilo="recibo"] .product-tile .tile-code{ grid-area:codigo; font-family:'IBM Plex Mono', monospace; font-size:11.5px; }
+  html[data-estilo="recibo"] .product-tile .tile-cat{ grid-area:cat; }
+  html[data-estilo="recibo"] .product-tile .tile-right{ width:175px; flex-direction:row-reverse; }
+  html[data-estilo="recibo"] .product-tile .tile-price{ font-size:15px; color:var(--e-texto); }
+  html[data-estilo="recibo"] .product-tile .tile-add{ position:static; }
+  html[data-estilo="recibo"] .product-tile .tile-edit, html[data-estilo="recibo"] .product-tile .tile-caja{ position:static; }
+  html[data-estilo="recibo"] .product-tile.kbd-focus{ outline:none; box-shadow:inset 3px 0 0 var(--blue-500); background:color-mix(in srgb, var(--blue-500) 7%, #fff); }
+}
+
+/* =====================================================================
+   E · TICKET AL CENTRO — el ticket es lo principal
+===================================================================== */
+html[data-estilo="centro"]{
+  --e-fondo:#F3F4F7; --e-sup:#FFFFFF; --e-sup-2:#F6F7F9; --e-linea:#E0E3EA;
+  --e-texto:#18233D; --e-suave:#64708A;
+  --e-acento:#F5B700; --e-acento-texto: var(--navy-950);
+  --e-font:'Sora', system-ui, sans-serif; --e-font-num:'Sora', sans-serif;
+  --e-radio:16px;
+  --e-lateral: var(--navy-900); --e-lateral-texto:#fff; --e-lateral-suave:#A9B4CC;
+  --e-lateral-activo: var(--navy-700); --e-lateral-activo-texto:#F5B700;
+}
+html[data-estilo="centro"] .ticket-footer{ background:var(--navy-900); color:#fff; border:none; }
+html[data-estilo="centro"] .ticket-totals .trow{ color:#B9C5DE; }
+html[data-estilo="centro"] .ticket-totals .trow.grand{ background:transparent; border:none; color:#fff; font-size:34px; padding:6px 0; }
+html[data-estilo="centro"] .ticket-row{ padding:12px 4px; }
+html[data-estilo="centro"] .ticket-row .ti-name{ font-size:14.5px; }
+@media (min-width:1101px){
+  html[data-estilo="centro"] .pos-wrap{ grid-template-columns:minmax(0,1fr) minmax(0,1.1fr); }
+  html[data-estilo="centro"] .ticket-panel{ order:-1; }
+  html[data-estilo="centro"] .pos-product-grid{ grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
+}
+
+/* =====================================================================
+   F · PIZARRÓN DE ALMACÉN — pizarra verde, ticket de papel madera
+===================================================================== */
+html[data-estilo="pizarron"]{
+  --e-fondo:#22372B; --e-sup:#2B4436; --e-sup-2:#33503F; --e-linea:rgba(241,243,236,.16);
+  --e-texto:#F1F3EC; --e-suave:#A9BBAE;
+  --e-acento:#F2D06B; --e-acento-texto:#22372B;
+  --e-font:'Archivo', system-ui, sans-serif; --e-font-num:'Archivo', sans-serif; --e-font-titulo:'Caveat', cursive;
+  --e-radio:10px;
+  --e-lateral:#3A2817; --e-lateral-texto:#EAD9C4; --e-lateral-suave:#B99A78;
+  --e-lateral-activo:#D8BC8E; --e-lateral-activo-texto:#2C2117;
+  --e-precio:#F2D06B;
+  --e-kraft:#D8BC8E; --e-tinta-kraft:#2C2117;
+}
+html[data-estilo="pizarron"] body{ background:#22372B radial-gradient(ellipse at 30% 10%, rgba(255,255,255,.05), transparent 60%); }
+html[data-estilo="pizarron"] .page-header h1{ font-size:34px; font-weight:700; }
+html[data-estilo="pizarron"] .pos-scanbar{ border:2px dashed rgba(241,243,236,.35); background:transparent; box-shadow:none; }
+html[data-estilo="pizarron"] .product-tile{ background:transparent; border:1px dashed rgba(241,243,236,.22); }
+html[data-estilo="pizarron"] .product-tile .tile-photo{ background:rgba(255,255,255,.06); }
+/* El ticket es una nota de papel madera */
+html[data-estilo="pizarron"] .ticket-panel,
+html[data-estilo="pizarron"] .ticket-footer{ background:var(--e-kraft) !important; color:var(--e-tinta-kraft) !important; border-color:rgba(44,33,23,.2) !important; }
+html[data-estilo="pizarron"] .ticket-panel{ box-shadow:0 10px 24px rgba(0,0,0,.35); border-radius:4px; }
+html[data-estilo="pizarron"] .ticket-panel *:not(.pos-action-btn):not(.pos-action-btn *){ color:var(--e-tinta-kraft) !important; border-color:rgba(44,33,23,.2) !important; }
+html[data-estilo="pizarron"] .ticket-header h5{ font-family:'Caveat', cursive; font-size:30px; }
+html[data-estilo="pizarron"] .ticket-totals .trow.grand{ background:transparent !important; border:none; border-top:2px solid var(--e-tinta-kraft) !important; border-radius:0; font-size:30px; }
+html[data-estilo="pizarron"] .ticket-panel input{ background:rgba(255,255,255,.35) !important; }
+html[data-estilo="pizarron"] .pos-btn-finalize{ background:#22372B; color:#F1F3EC; font-family:'Caveat', cursive; font-size:24px; }
+
+/* =====================================================================
+   G · MINIMALISTA — blanco, gris y un solo color
+===================================================================== */
+html[data-estilo="minimal"]{
+  --e-fondo:#FFFFFF; --e-sup:#FFFFFF; --e-sup-2:#F5F5F6; --e-linea:#E9E9EC;
+  --e-texto:#18181C; --e-suave:#7A7A84;
+  --e-acento: var(--blue-500); --e-acento-texto:#fff;
+  --e-font:'Inter', system-ui, sans-serif; --e-font-num:'Inter', sans-serif;
+  --e-radio:16px;
+  --e-lateral:#FFFFFF; --e-lateral-texto:#18181C; --e-lateral-suave:#8A8A93;
+  --e-lateral-activo:#F5F5F6; --e-lateral-activo-texto:#18181C; --e-lateral-borde:#E9E9EC;
+}
+html[data-estilo="minimal"] .card, html[data-estilo="minimal"] .pos-scanbar,
+html[data-estilo="minimal"] .ticket-panel, html[data-estilo="minimal"] .scan-result-panel{ box-shadow:none; }
+html[data-estilo="minimal"] .pos-scanbar{ background:var(--e-sup-2); border-color:transparent; }
+html[data-estilo="minimal"] .pos-scanbar .scan-icon{ background:transparent; color:#8A8A93; }
+html[data-estilo="minimal"] .product-tile{ border-color:transparent; padding:0 0 6px; }
+html[data-estilo="minimal"] .product-tile:hover{ box-shadow:none; border-color:transparent; }
+html[data-estilo="minimal"] .product-tile .tile-name{ font-weight:500; }
+html[data-estilo="minimal"] .product-tile .tile-price{ color:#18181C; font-weight:600; }
+html[data-estilo="minimal"] .tile-stock.ok{ background:transparent; color:#8A8A93; }
+html[data-estilo="minimal"] .ticket-panel{ border:none; border-left:1px solid var(--e-linea); border-radius:0; }
+html[data-estilo="minimal"] .ticket-header::before, html[data-estilo="minimal"] .ticket-header::after{ display:none; }
+html[data-estilo="minimal"] .ticket-header{ border-bottom:1px solid var(--e-linea); }
+html[data-estilo="minimal"] .ticket-footer{ background:#fff; }
+html[data-estilo="minimal"] .ticket-totals .trow.grand{ border:none; font-size:32px; font-weight:600; padding:6px 0; }
+html[data-estilo="minimal"] .sidebar .sidebar-brand, html[data-estilo="minimal"] .sidebar .ic{ filter:grayscale(1); }
+
+/* =====================================================================
+   H · ALTO CONTRASTE — letras grandes, bordes marcados, foco amarillo
+   (colores fijos a propósito: no depende del color del negocio)
+===================================================================== */
+html[data-estilo="contraste"]{
+  --e-fondo:#F2F2F2; --e-sup:#FFFFFF; --e-sup-2:#FFFFFF; --e-linea:#000000;
+  --e-texto:#000000; --e-suave:#3A3A3A;
+  --e-acento:#0047AB; --e-acento-texto:#fff; --e-foco:#FFD400;
+  --e-font:'Archivo', system-ui, sans-serif; --e-font-num:'Archivo', sans-serif;
+  --e-radio:10px;
+  --e-lateral:#000000; --e-lateral-texto:#fff; --e-lateral-suave:#D6D6D6;
+  --e-lateral-activo:#FFD400; --e-lateral-activo-texto:#000;
+}
+html[data-estilo="contraste"] body{ font-size:16px; }
+html[data-estilo="contraste"] .card, html[data-estilo="contraste"] .pos-scanbar,
+html[data-estilo="contraste"] .ticket-panel, html[data-estilo="contraste"] .product-tile,
+html[data-estilo="contraste"] .scan-result-panel{ border:2px solid #000; box-shadow:none; }
+html[data-estilo="contraste"] .pos-scanbar{ border-width:3px; outline:4px solid #FFD400; outline-offset:2px; }
+html[data-estilo="contraste"] #posBusqueda{ font-size:18px; font-weight:600; }
+html[data-estilo="contraste"] .product-tile .tile-name{ font-size:15.5px; font-weight:700; }
+html[data-estilo="contraste"] .product-tile .tile-price{ font-size:19px; font-weight:800; color:#000; }
+html[data-estilo="contraste"] .product-tile .tile-code, html[data-estilo="contraste"] .product-tile .tile-cat{ color:#3A3A3A; font-size:12px; }
+html[data-estilo="contraste"] .tile-stock{ font-size:12px; border:1.5px solid currentColor; }
+html[data-estilo="contraste"] .tile-stock.low, html[data-estilo="contraste"] .tile-stock.out{ color:#B00020; background:#fff; }
+html[data-estilo="contraste"] .product-tile.kbd-focus, html[data-estilo="contraste"] *:focus-visible{ outline:5px solid #FFD400 !important; outline-offset:1px; }
+html[data-estilo="contraste"] .ticket-row{ border-bottom:2px solid #000; }
+html[data-estilo="contraste"] .ticket-row .ti-name{ font-size:15.5px; font-weight:600; }
+html[data-estilo="contraste"] .ticket-totals .trow{ color:#000; font-size:15px; }
+html[data-estilo="contraste"] .ticket-totals .trow.grand{ background:#000; color:#FFD400; border:none; font-size:32px; }
+html[data-estilo="contraste"] .pos-btn-finalize{ border:3px solid #000; font-size:17px; padding:13px 10px; }
+html[data-estilo="contraste"] .sidebar a{ font-size:15.5px; font-weight:600; }
+
+/* =====================================================================
+   I · CELESTE Y BLANCO — colores fijos, ticket en una barra abajo
+===================================================================== */
+html[data-estilo="celeste"]{
+  --e-fondo:#F4F8FC; --e-sup:#FFFFFF; --e-sup-2:#E6F1FA; --e-linea:#D6E4F0;
+  --e-texto:#13314D; --e-suave:#5A7088;
+  --e-acento:#F6B40E; --e-acento-texto:#13314D;
+  --e-font:'Figtree', system-ui, sans-serif; --e-font-num:'Bricolage Grotesque','Figtree',sans-serif; --e-font-titulo:'Bricolage Grotesque','Figtree',sans-serif;
+  --e-radio:16px;
+  --e-lateral:#6FA8DC; --e-lateral-texto:#fff; --e-lateral-suave:#EAF3FB;
+  --e-lateral-activo:#FFFFFF; --e-lateral-activo-texto:#2E6EA6;
+}
+html[data-estilo="celeste"] .sidebar{ box-shadow:inset -6px 0 0 #fff, inset -9px 0 0 #6FA8DC; }
+html[data-estilo="celeste"] .product-tile .tile-photo{ aspect-ratio:16/9; background:linear-gradient(180deg,#E6F1FA 0 33%,#fff 33% 66%,#E6F1FA 66%); }
+html[data-estilo="celeste"] .pos-scanbar{ border:2px solid #6FA8DC; }
+html[data-estilo="celeste"] .pos-scanbar .scan-icon{ background:#2E6EA6; }
+@media (min-width:1101px){
+  /* Ticket como barra horizontal abajo, catálogo a todo el ancho */
+  html[data-estilo="celeste"] .pos-wrap{ grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr) 150px; }
+  html[data-estilo="celeste"] .ticket-panel{ flex-direction:row; border-top:3px solid #6FA8DC; }
+  html[data-estilo="celeste"] .ticket-header{ flex-direction:column; justify-content:center; gap:6px; border-bottom:none; border-right:2px dashed var(--e-linea); padding:10px 14px; min-width:96px; }
+  html[data-estilo="celeste"] .ticket-header::before, html[data-estilo="celeste"] .ticket-header::after{ display:none; }
+  html[data-estilo="celeste"] .ticket-items{ flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden; display:flex; align-items:center; padding:10px 12px; }
+  html[data-estilo="celeste"] #ticketPOS{ display:flex; gap:10px; }
+  html[data-estilo="celeste"] .ticket-row{ display:grid; grid-template-columns:56px 1fr 24px; grid-template-areas:"info info info" "qty sub x"; align-items:center; min-width:200px; max-width:220px; border:1px solid var(--e-linea); border-radius:14px; padding:9px 11px; gap:6px 8px; }
+  html[data-estilo="celeste"] .ticket-row .ti-info{ grid-area:info; min-width:0; }
+  html[data-estilo="celeste"] .ticket-row .ti-qty{ grid-area:qty; }
+  html[data-estilo="celeste"] .ticket-row .ti-sub{ grid-area:sub; text-align:right; }
+  html[data-estilo="celeste"] .ticket-row .ti-remove{ grid-area:x; }
+  html[data-estilo="celeste"] .ticket-row:last-child{ border-bottom:1px solid var(--e-linea); }
+  html[data-estilo="celeste"] .ticket-empty{ flex-direction:row; gap:10px; margin:auto; }
+  html[data-estilo="celeste"] .ticket-footer{ width:440px; flex-shrink:0; border-top:none; border-left:1px solid var(--e-linea); display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:center; padding:12px 14px; }
+  html[data-estilo="celeste"] .ticket-totals{ margin:0; }
+  html[data-estilo="celeste"] .ticket-totals .trow:not(.grand){ font-size:12px; padding:1px 4px; }
+  html[data-estilo="celeste"] .ticket-totals .trow.grand{ font-size:24px; background:#E6F1FA; border:none; flex-direction:column; align-items:flex-start; gap:0; padding:6px 10px; margin-top:4px; }
+  html[data-estilo="celeste"] .ticket-totals .trow.grand > span:first-child{ font-size:12px; }
+  html[data-estilo="celeste"] .pos-action-bar{ grid-template-columns:repeat(3,1fr); margin:0; gap:6px; }
+  html[data-estilo="celeste"] .pos-btn-finalize{ grid-column:1 / -1; padding:12px 8px; font-size:16px; }
+}
+
+/* =====================================================================
+   J · DEGRADÉ — fondo en degradé con los colores del negocio, paneles
+   sólidos (sin efecto vidrio: liviano para PCs viejas)
+===================================================================== */
+html[data-estilo="degrade"]{
+  --e-fondo: var(--navy-950);
+  --e-sup: color-mix(in srgb, var(--navy-800) 82%, #ffffff 6%);
+  --e-sup-2: color-mix(in srgb, var(--navy-700) 85%, #ffffff 8%);
+  --e-linea: color-mix(in srgb, var(--navy-600) 70%, #ffffff 18%);
+  --e-texto:#F4F1FA; --e-suave:#BDB3D3;
+  --e-acento: linear-gradient(135deg, var(--blue-500), color-mix(in srgb, var(--blue-500) 45%, #FF8A7A));
+  --e-acento-solido: var(--blue-500); --e-acento-texto:#fff;
+  --e-font:'Inter', system-ui, sans-serif; --e-font-num:'Bricolage Grotesque','Inter',sans-serif; --e-font-titulo:'Bricolage Grotesque','Inter',sans-serif;
+  --e-radio:20px;
+  --e-lateral: color-mix(in srgb, var(--navy-900) 90%, #000); --e-lateral-texto:#fff; --e-lateral-suave:#BDB3D3;
+  --e-lateral-activo: var(--e-sup-2); --e-lateral-activo-texto:#fff;
+  --e-precio:#fff; --e-foco:#fff;
+}
+html[data-estilo="degrade"] body{
+  background:
+    radial-gradient(900px 600px at 15% 0%, color-mix(in srgb, var(--blue-500) 35%, transparent), transparent 60%),
+    radial-gradient(800px 600px at 100% 100%, color-mix(in srgb, var(--navy-600) 80%, transparent), transparent 55%),
+    linear-gradient(135deg, var(--navy-950), var(--navy-900));
+  background-attachment:fixed;
+}
+html[data-estilo="degrade"] .cat-chip.active,
+html[data-estilo="degrade"] .pos-categories .active{ background:#fff !important; color:var(--navy-950) !important; border-color:#fff !important; }
+html[data-estilo="degrade"] .ticket-totals .trow.grand{ background:transparent !important; border:none; font-size:36px; padding:6px 0; }
+html[data-estilo="degrade"] .ticket-totals .trow.grand .money{ background:linear-gradient(90deg,#fff,#FFC76E); -webkit-background-clip:text; background-clip:text; color:transparent; }
+html[data-estilo="degrade"] .pos-btn-finalize{ box-shadow:0 10px 22px color-mix(in srgb, var(--blue-500) 40%, transparent); }
+html[data-estilo="degrade"] .btn-primary{ background:var(--e-acento-solido); }
+
+/* ---------- Estilos oscuros: variables invertidas ---------- */
+html[data-oscuro]{
+  --slate-50: color-mix(in srgb, var(--e-sup) 92%, #000);
+  --slate-100: var(--e-sup-2);
+  --slate-200: var(--e-linea);
+  --slate-300: color-mix(in srgb, var(--e-suave) 55%, var(--e-sup));
+  --slate-400: color-mix(in srgb, var(--e-suave) 80%, var(--e-sup));
+  --slate-500: var(--e-suave);
+  --slate-600: color-mix(in srgb, var(--e-texto) 75%, var(--e-suave));
+  --slate-700: var(--e-texto);
+  --blue-50: color-mix(in srgb, var(--blue-500) 18%, var(--e-sup));
+  --green-50: color-mix(in srgb, #16a34a 22%, var(--e-sup));
+  --amber-50: color-mix(in srgb, #f59e0b 22%, var(--e-sup));
+  --red-50: color-mix(in srgb, #dc2626 22%, var(--e-sup));
+  --e-sup-2-fallback: var(--e-sup-2);
+  color-scheme: dark;
+}
+html[data-oscuro] input, html[data-oscuro] select, html[data-oscuro] textarea{ background-color:var(--e-sup-2); color:var(--e-texto); border-color:var(--e-linea); }
+html[data-oscuro] #posBusqueda{ background:transparent; border:none; }
+/* Barras fijas (filtros de Productos) con fondo escrito en línea: igualar al fondo de la página */
+html:where([data-estilo]:not([data-estilo="clasico"])) .seccion [style*="position:sticky"]{ background:var(--e-fondo) !important; }
+html[data-oscuro] .modal-content{ background:var(--e-sup); color:var(--e-texto); }
+html[data-oscuro] .table{ --bs-table-bg:transparent; color:var(--e-texto); }
+html[data-oscuro] h1, html[data-oscuro] h2, html[data-oscuro] h3, html[data-oscuro] h4, html[data-oscuro] h5, html[data-oscuro] h6{ color:var(--e-texto); }
+html[data-oscuro] .text-muted{ color:var(--e-suave) !important; }
+html[data-oscuro] [style*="background:#fff"], html[data-oscuro] [style*="background: #fff"],
+html[data-oscuro] [style*="background:white"], html[data-oscuro] [style*="background:#f4f4f4"],
+html[data-oscuro] [style*="background:#f1f5f9"], html[data-oscuro] [style*="background:var(--slate-50)"]{ background:var(--e-sup-2) !important; }
+html[data-oscuro] [style*="color:#64748b"], html[data-oscuro] [style*="color:#555"],
+html[data-oscuro] [style*="color:#666"], html[data-oscuro] [style*="color:#3a3a3a"],
+html[data-oscuro] [style*="color:#1e293b"], html[data-oscuro] [style*="color:#1a1a1a"]{ color:var(--e-suave) !important; }
+/* El recibo de la venta en pantalla se mantiene blanco (es una vista del papel) */
+html[data-oscuro] #receiptBackdrop .receipt, html[data-oscuro] #thermalPrintFrame{ color-scheme:light; }
+
+/* ---------- Selector de estilos en Configuración ---------- */
+.estilos-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
+.estilo-opcion{ border:2px solid var(--slate-200); border-radius:14px; padding:8px; background:var(--e-sup, #fff); cursor:pointer; text-align:left; display:flex; flex-direction:column; gap:6px; color:inherit; font:inherit; }
+.estilo-opcion img{ width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:9px; background:var(--slate-100); display:block; }
+.estilo-opcion b{ font-size:13.5px; }
+.estilo-opcion small{ color:var(--slate-500); font-size:12px; line-height:1.35; }
+.estilo-opcion[aria-pressed="true"]{ border-color:var(--blue-500); box-shadow:0 0 0 3px var(--blue-50); }
+.estilo-opcion:focus-visible{ outline:3px solid var(--blue-500); outline-offset:2px; }
+
+}
