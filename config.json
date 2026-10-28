@@ -3,6 +3,6 @@
 
   "empresa": "Jireh Depósito",
   "nombreCorto": "Depósito",
-  "apiUrl": "PEGAR_ACA_LA_URL_EXEC_DEL_BACKEND_DEL_DEPOSITO",
+  "apiUrl": "https://script.google.com/macros/s/AKfycbxBpo20FNtFOreSSWqrkG1Zv5NyhsxxdJNT3cw0EmP466HwRgp1ydm43Xlu1fUK_ZQYlA/exec",
   "colorTema": "#241536"
 }
